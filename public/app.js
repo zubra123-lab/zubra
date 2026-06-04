@@ -98,8 +98,41 @@ function processImage(file, maxDim) {
   });
 }
 
+// Controlla se un file immagine contiene dati EXIF di fotocamera (APP1 "Exif").
+// Le foto scattate dal vivo li hanno; screenshot e immagini da internet quasi mai.
+function hasCameraExif(file) {
+  return new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onerror = () => resolve(false);
+    fr.onload = () => {
+      try {
+        const b = new Uint8Array(fr.result);
+        if (b[0] !== 0xFF || b[1] !== 0xD8) return resolve(false); // non è JPEG
+        let off = 2;
+        while (off < b.length - 4) {
+          if (b[off] !== 0xFF) { off++; continue; }
+          const marker = b[off + 1];
+          if (marker === 0xD8 || marker === 0xD9) { off += 2; continue; }
+          if (marker === 0xDA) break; // inizio immagine
+          const size = (b[off + 2] << 8) + b[off + 3];
+          if (marker === 0xE1) { // APP1
+            // "Exif" = 45 78 69 66
+            if (b[off + 4] === 0x45 && b[off + 5] === 0x78 && b[off + 6] === 0x69 && b[off + 7] === 0x66) {
+              return resolve(true);
+            }
+          }
+          if (size <= 0) break;
+          off += 2 + size;
+        }
+        resolve(false);
+      } catch { resolve(false); }
+    };
+    fr.readAsArrayBuffer(file.slice(0, 256 * 1024)); // bastano i primi 256 KB
+  });
+}
+
 // ---- Stato corrente della scansione ----
-let pending = null; // { base64, mimeType, thumbDataUrl }
+let pending = null; // { base64, mimeType, thumbDataUrl, real }
 
 // ---- Monete (dal server) ----
 function getCoins() { return serverState.coins || 0; }
@@ -138,14 +171,16 @@ async function onFile(file) {
       processImage(file, 1024),
       processImage(file, 420),
     ]);
-    pending = { base64: full.base64, mimeType: full.mimeType, thumbDataUrl: thumb.dataUrl };
+    const real = await hasCameraExif(file);
+    pending = { base64: full.base64, mimeType: full.mimeType, thumbDataUrl: thumb.dataUrl, real };
     const prev = $("preview");
     prev.src = full.dataUrl;
     prev.hidden = false;
     $("dzInner").style.opacity = "0";
     $("dropzone").classList.add("has-image");
     $("btnScan").disabled = false;
-    setStatus("Pronto. Premi «Scansiona».", "ok");
+    if (!real) setStatus(t("photo_internet_blocked"), "error");
+    else setStatus("Pronto. Premi «Scansiona».", "ok");
   } catch (e) {
     setStatus(e.message || "Errore con l'immagine", "error");
   }
@@ -157,6 +192,8 @@ let scanAbort = null, scanTimer = null, scanStart = 0, busyScanning = false;
 async function scan() {
   if (busyScanning || !pending) return;
   if (!authToken()) { setStatus("Devi accedere prima di scansionare.", "error"); return; }
+  // Anti-imbroglio: blocca le immagini senza dati di fotocamera (internet/screenshot).
+  if (!pending.real) { setStatus(t("photo_internet_blocked"), "error"); return; }
   busyScanning = true;
   setBusy(true);
   scanStart = Date.now();
