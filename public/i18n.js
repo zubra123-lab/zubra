@@ -82,6 +82,18 @@ const I18N = {
     scan_progress: (s) => `🔎 Sto osservando l'animale… ${s}s (può richiedere ~60s)`,
     scan_cancel: "✕ Annulla",
     scan_cancelled: "Scansione annullata.",
+    forgot_q: "Password dimenticata?",
+    forgot_info: "Inserisci la tua email o numero: ti mandiamo un codice per reimpostare la password.",
+    forgot_send: "Invia codice",
+    new_password: "Nuova password",
+    reset_btn: "Reimposta ed entra",
+    reset_sent: "📧 Se l'account esiste, ti abbiamo inviato un codice. Controlla la posta (anche spam)!",
+    tab_lb: "Classifica",
+    lb_title: "Classifica mondiale",
+    lb_desc: "I cacciatori con più monete nel mondo!",
+    lb_empty: "Ancora nessuno in classifica. Scansiona per primo! 🐾",
+    lb_you: (rank, total) => `Sei #${rank} su ${total} 🦓`,
+    photo_suspect: "⚠️ Sembra una foto presa da internet, non scattata da te: non conteggiata. Prova con una TUA foto!",
     dl_email: "📧 Ti abbiamo inviato un'email con il codice. Controlla la posta (anche nello spam)!",
     dl_sms: "📱 Ti abbiamo inviato un SMS con il codice!",
     dl_code: "📲 Non è stato possibile inviare l'email. Ecco il tuo codice:",
@@ -161,6 +173,18 @@ const I18N = {
     scan_progress: (s) => `🔎 Looking at the animal… ${s}s (can take ~60s)`,
     scan_cancel: "✕ Cancel",
     scan_cancelled: "Scan cancelled.",
+    forgot_q: "Forgot password?",
+    forgot_info: "Enter your email or phone: we'll send you a code to reset your password.",
+    forgot_send: "Send code",
+    new_password: "New password",
+    reset_btn: "Reset and enter",
+    reset_sent: "📧 If the account exists, we've sent you a code. Check your inbox (and spam)!",
+    tab_lb: "Ranking",
+    lb_title: "World leaderboard",
+    lb_desc: "The hunters with the most coins in the world!",
+    lb_empty: "Nobody on the board yet. Be the first to scan! 🐾",
+    lb_you: (rank, total) => `You're #${rank} of ${total} 🦓`,
+    photo_suspect: "⚠️ This looks like a photo from the internet, not taken by you: not counted. Try one of YOUR photos!",
     dl_email: "📧 We've sent you an email with the code. Check your inbox (and spam)!",
     dl_sms: "📱 We've sent you an SMS with the code!",
     dl_code: "📲 We couldn't send the email. Here's your code:",
@@ -440,10 +464,10 @@ function setLang(lang) {
   applyLang();
 }
 // Traduzione: t("key") oppure t("key", arg) per le voci-funzione.
-function t(key, arg) {
+function t(key, ...args) {
   const dict = I18N[getLang()] || I18N.it;
   const v = (key in dict) ? dict[key] : (I18N.it[key] ?? key);
-  return typeof v === "function" ? v(arg) : v;
+  return typeof v === "function" ? v(...args) : v;
 }
 
 // Applica le traduzioni a tutti gli elementi statici marcati con data-i18n.

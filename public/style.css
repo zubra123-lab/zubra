@@ -309,9 +309,28 @@ main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding
   50% { box-shadow: 0 12px 38px -6px rgba(111,212,154,0.9), inset 0 0 26px rgba(111,212,154,0.22); }
 }
 
+/* pulsante Classifica: a sinistra del negozio, oro */
+.tab-fab-lb {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: fabPulse 2.6s ease-in-out infinite;
+}
+.tab-fab-lb .tab-fab-lbl { color: var(--accent); }
+
 /* la scheda animale appare SOPRA il modale collezione */
 #sheetBackdrop { z-index: 60; }
 .coll { --rc: var(--accent-2); }
+.lb { --rc: var(--accent); }
+
+/* lista classifica */
+.lb-list { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px 4px; }
+.lb-row {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+  border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.02);
+}
+.lb-row.is-me { border-color: color-mix(in srgb, var(--accent-2) 55%, transparent); background: color-mix(in srgb, var(--accent-2) 10%, transparent); }
+.lb-rank { font-family: var(--font-display); font-weight: 700; font-size: 18px; min-width: 38px; text-align: center; }
+.lb-name { flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-coins { font-family: var(--font-mono); font-size: 13.5px; color: var(--accent); white-space: nowrap; }
 
 /* ============ Negozio ============ */
 .shop { --rc: var(--accent); }

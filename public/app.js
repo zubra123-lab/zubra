@@ -181,6 +181,13 @@ async function scan() {
     const result = d.result || {};
     if (!result.e_animale) { setStatus(t("no_animal"), "error"); return; }
 
+    // Anti-imbroglio: foto sospetta (presa da internet) → non salvata, niente monete.
+    if (result.foto_sospetta) {
+      const why = result.motivo_sospetto ? " (" + result.motivo_sospetto + ")" : "";
+      setStatus(t("photo_suspect") + why, "error");
+      return;
+    }
+
     const entry = {
       id: "e-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       result,
@@ -389,6 +396,35 @@ function closeCollection() {
   document.body.style.overflow = "";
 }
 
+// ---- Classifica mondiale ----
+function closeLeaderboard() {
+  $("lbBackdrop").hidden = true;
+  document.body.style.overflow = "";
+}
+async function openLeaderboard() {
+  $("lbList").innerHTML = `<p class="shop-msg">…</p>`;
+  $("lbMe").textContent = "";
+  $("lbBackdrop").hidden = false;
+  document.body.style.overflow = "hidden";
+  try {
+    const r = await fetch(`${API_BASE}/leaderboard`, { headers: authHeaders(false) });
+    const d = await r.json().catch(() => ({}));
+    const top = (d && d.top) || [];
+    if (!top.length) { $("lbList").innerHTML = `<p class="coll-empty">${t("lb_empty")}</p>`; return; }
+    const medal = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`);
+    const me = d.me && d.me.username;
+    $("lbList").innerHTML = top.map((u, i) => `
+      <div class="lb-row${me && u.username === me ? " is-me" : ""}">
+        <span class="lb-rank">${medal(i)}</span>
+        <span class="lb-name">${esc(u.username)}${u.pro ? " ⭐" : ""}</span>
+        <span class="lb-coins">🪙 ${Number(u.coins || 0).toLocaleString("it-IT")}</span>
+      </div>`).join("");
+    if (d.me && d.me.rank) $("lbMe").textContent = t("lb_you", d.me.rank, d.me.total);
+  } catch {
+    $("lbList").innerHTML = `<p class="shop-msg error">Server non raggiungibile.</p>`;
+  }
+}
+
 // ---- Pubblicità premio (guarda un annuncio -> 1 scansione gratis) ----
 const FAKE_ADS = [
   { emoji: "🦁", title: "SUPER ZOO", line: "Vieni a vedere gli animali più rari del mondo!" },
@@ -549,6 +585,11 @@ function init() {
   $("adClaim").addEventListener("click", claimAd);
   $("adBackdrop").addEventListener("click", (e) => { if (e.target === $("adBackdrop")) closeAd(); });
 
+  // Classifica
+  $("lbBtn").addEventListener("click", openLeaderboard);
+  $("lbClose").addEventListener("click", closeLeaderboard);
+  $("lbBackdrop").addEventListener("click", (e) => { if (e.target === $("lbBackdrop")) closeLeaderboard(); });
+
   // Negozio
   $("shopBtn").addEventListener("click", openShop);
   $("shopClose").addEventListener("click", closeShop);
@@ -559,7 +600,7 @@ function init() {
   $("collCloseBtn").addEventListener("click", closeCollection);
   $("collBackdrop").addEventListener("click", (e) => { if (e.target === $("collBackdrop")) closeCollection(); });
 
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeSheet(); closeShop(); closeCollection(); closeAd(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeSheet(); closeShop(); closeCollection(); closeAd(); closeLeaderboard(); } });
 
   renderCoins();
   renderCollection();

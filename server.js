@@ -456,6 +456,78 @@ app.post('/auth/login', (req, res) => {
   res.json({ ok: true, token, user: publicUser(u) });
 });
 
+// Password dimenticata: invia un codice di reset (se l'account esiste).
+app.post('/auth/forgot', async (req, res) => {
+  if (!rateLimit('forgot:' + clientIp(req), 8, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi. Riprova tra qualche minuto.' });
+  }
+  const c = classifyContact((req.body || {}).contact);
+  const u = c && users[c.value];
+  // Risposta uniforme per non rivelare se l'account esiste.
+  if (!u || !u.verified) {
+    return res.json({ ok: true, delivery: 'email' });
+  }
+  if (!rateLimit('forgotsend:' + c.value, 1, 60 * 1000)) {
+    return res.status(429).json({ error: 'Aspetta un minuto prima di chiedere un nuovo codice.' });
+  }
+  u.resetCode = genCode();
+  u.resetExpires = Date.now() + 15 * 60 * 1000;
+  u.resetTries = 0;
+  persistUsers();
+  const { delivery } = await sendVerificationCode(u.contact, u.contactType, u.resetCode);
+  res.json({ ok: true, contact: u.contact, delivery, devCode: delivery === 'demo' ? u.resetCode : undefined });
+});
+
+// Reset password: codice + nuova password.
+app.post('/auth/reset', (req, res) => {
+  const { contact, code, newPassword } = req.body || {};
+  const c = classifyContact(contact);
+  const u = c && users[c.value];
+  if (!u || !u.resetCode) return res.status(400).json({ error: 'Richiesta non valida. Richiedi un nuovo codice.' });
+  if (Date.now() > u.resetExpires) {
+    delete u.resetCode; delete u.resetExpires; persistUsers();
+    return res.status(400).json({ error: 'Codice scaduto. Richiedine uno nuovo.' });
+  }
+  if ((u.resetTries || 0) >= 5) {
+    delete u.resetCode; delete u.resetExpires; persistUsers();
+    return res.status(429).json({ error: 'Troppi tentativi. Richiedi un nuovo codice.' });
+  }
+  if (String(code || '').trim() !== u.resetCode) {
+    u.resetTries = (u.resetTries || 0) + 1; persistUsers();
+    return res.status(400).json({ error: 'Codice non corretto.' });
+  }
+  if (String(newPassword || '').length < 6) {
+    return res.status(400).json({ error: 'La nuova password deve avere almeno 6 caratteri.' });
+  }
+  const { salt, hash } = hashPassword(String(newPassword));
+  u.salt = salt; u.hash = hash;
+  // La nuova password può anche attivare/disattivare il PRO.
+  u.pro = !!PRO_PASSWORD && String(newPassword) === PRO_PASSWORD;
+  delete u.resetCode; delete u.resetExpires; delete u.resetTries;
+  persistUsers();
+  const token = newToken();
+  sessions.set(token, u.contact);
+  res.json({ ok: true, token, user: publicUser(u) });
+});
+
+// Classifica mondiale delle monete (top 20).
+app.get('/leaderboard', (req, res) => {
+  const top = Object.values(users)
+    .filter((u) => u.verified)
+    .map((u) => ({ username: u.username, coins: u.coins || 0, pro: !!u.pro }))
+    .sort((a, b) => b.coins - a.coins)
+    .slice(0, 20);
+  // Posizione dell'utente che chiede (se loggato).
+  let me = null;
+  const who = authUser(req);
+  if (who) {
+    const all = Object.values(users).filter((u) => u.verified).sort((a, b) => (b.coins || 0) - (a.coins || 0));
+    const rank = all.findIndex((u) => u.contact === who.contact);
+    me = { username: who.username, coins: who.coins || 0, rank: rank >= 0 ? rank + 1 : null, total: all.length };
+  }
+  res.json({ top, me });
+});
+
 // Chi sono (ripristina la sessione dal token salvato nell'app).
 app.get('/auth/me', (req, res) => {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -494,6 +566,8 @@ Regole:
 - habitat: com'è l'habitat ideale; se si può tenere, come ricreare un ambiente adatto (spazio, temperatura, vegetazione, acqua). Se è selvatico e non si tiene, descrivi l'ambiente naturale.
 - curiosita: una curiosità breve e divertente (1-2 frasi).
 - confidenza: quanto sei sicuro dell'identificazione, da 0 a 100.
+- foto_sospetta: true se la foto NON sembra scattata dal vivo dall'utente con una fotocamera, ma presa da internet o falsa: screenshot, presenza di watermark/logo/testo sovrimpresso, immagine stock o promozionale, disegno/illustrazione/render 3D, foto di uno schermo o di un'altra foto, qualità/compressione tipica del web, inquadratura "da catalogo". false se sembra una foto reale e spontanea.
+- motivo_sospetto: se foto_sospetta=true, spiega in pochissime parole perché (es. "sembra uno screenshot con watermark"); altrimenti stringa vuota.
 - Se nella foto NON c'è un animale: e_animale=false, tutti i campi testo vuoti, valore_monete=0, confidenza=0.
 - Se ci sono più animali, identifica quello più in evidenza.`;
 
@@ -528,18 +602,21 @@ const RESPONSE_SCHEMA = {
     habitat: { type: 'STRING' },
     curiosita: { type: 'STRING' },
     confidenza: { type: 'INTEGER' },
+    foto_sospetta: { type: 'BOOLEAN' },
+    motivo_sospetto: { type: 'STRING' },
   },
   required: [
     'e_animale', 'nome_comune', 'nome_scientifico', 'razza', 'categoria',
     'rarita', 'valore_monete', 'prezzo_reale', 'descrizione', 'pericolosita',
     'pericolo_dettaglio', 'prendibile', 'vendibile', 'cosa_mangia',
     'come_trovarlo', 'habitat', 'curiosita', 'confidenza',
+    'foto_sospetta', 'motivo_sospetto',
   ],
 };
 
 // Istruzione JSON per provider senza schema nativo (MiniMax).
 const JSON_INSTRUCTION = `Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, niente markdown) con ESATTAMENTE queste chiavi:
-{"e_animale":bool,"nome_comune":str,"nome_scientifico":str,"razza":str,"categoria":"mammifero|uccello|rettile|anfibio|pesce|insetto|aracnide|altro","rarita":"Comune|Non Comune|Rara|Epica|Mitica|Leggendaria|Mega","valore_monete":int,"prezzo_reale":str,"descrizione":str,"pericolosita":"Innocuo|Poco pericoloso|Pericoloso|Molto pericoloso","pericolo_dettaglio":str,"prendibile":str,"vendibile":str,"cosa_mangia":str,"come_trovarlo":str,"habitat":str,"curiosita":str,"confidenza":int}`;
+{"e_animale":bool,"nome_comune":str,"nome_scientifico":str,"razza":str,"categoria":"mammifero|uccello|rettile|anfibio|pesce|insetto|aracnide|altro","rarita":"Comune|Non Comune|Rara|Epica|Mitica|Leggendaria|Mega","valore_monete":int,"prezzo_reale":str,"descrizione":str,"pericolosita":"Innocuo|Poco pericoloso|Pericoloso|Molto pericoloso","pericolo_dettaglio":str,"prendibile":str,"vendibile":str,"cosa_mangia":str,"come_trovarlo":str,"habitat":str,"curiosita":str,"confidenza":int,"foto_sospetta":bool,"motivo_sospetto":str}`;
 
 // Estrae un oggetto JSON dal testo del modello (robusto a testo extra/markdown).
 function parseAnimalJson(text) {
@@ -669,8 +746,9 @@ app.post('/scan', async (req, res) => {
       return res.status(502).json({ error: e?.userMessage || 'Errore del servizio AI. Riprova.' });
     }
 
-    // Consuma una scansione e accredita le monete solo se è un animale.
-    if (result.e_animale) {
+    // Consuma una scansione e accredita le monete solo se è un animale VERO
+    // (foto reale, non presa da internet). Le foto sospette non contano.
+    if (result.e_animale && !result.foto_sospetta) {
       consume(uid);
       addCoinsU(u, Number(result.valore_monete) || 0);
     }

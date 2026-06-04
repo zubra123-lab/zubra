@@ -166,8 +166,28 @@
     </article>
   </div>
 
-  <!-- ===== Barra inferiore: negozio al centro, collezione a destra ===== -->
+  <!-- ===== Classifica (modale, stile negozio) ===== -->
+  <div class="sheet-backdrop" id="lbBackdrop" hidden>
+    <article class="sheet lb" id="lbSheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="lbClose" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll">
+        <div class="shop-head">
+          <span class="shop-emoji">🏆</span>
+          <h2 data-i18n="lb_title">Classifica mondiale</h2>
+          <p data-i18n="lb_desc">I cacciatori con più monete nel mondo!</p>
+        </div>
+        <div class="lb-list" id="lbList"></div>
+        <p class="shop-msg" id="lbMe"></p>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===== Barra inferiore: classifica, negozio (centro), collezione ===== -->
   <nav class="tabbar">
+    <button class="tab-fab tab-fab-lb" id="lbBtn" type="button" aria-label="Apri la classifica">
+      <span class="tab-fab-ico">🏆</span>
+      <span class="tab-fab-lbl" data-i18n="tab_lb">Classifica</span>
+    </button>
     <button class="tab-fab" id="shopBtn" type="button" aria-label="Apri il negozio">
       <span class="tab-fab-ico">🏪</span>
       <span class="tab-fab-lbl" data-i18n="tab_shop">Negozio</span>
@@ -203,6 +223,27 @@
         <label class="field"><span data-i18n="f_password">Password</span>
           <input id="loginPassword" type="password" autocomplete="current-password" data-i18n-ph="ph_password" placeholder="••••••" /></label>
         <button class="auth-btn" type="submit" data-i18n="login">Accedi</button>
+        <button class="auth-link" id="forgotLink" type="button" data-i18n="forgot_q">Password dimenticata?</button>
+      </form>
+
+      <!-- PASSWORD DIMENTICATA: invia codice -->
+      <form class="auth-form" id="formForgot" hidden>
+        <p class="verify-info" id="forgotInfo" data-i18n="forgot_info">Inserisci la tua email o numero: ti mandiamo un codice per reimpostare la password.</p>
+        <label class="field"><span data-i18n="f_contact">Email o numero</span>
+          <input id="fpContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <button class="auth-btn" type="submit" data-i18n="forgot_send">Invia codice</button>
+        <button class="auth-link" id="forgotBack" type="button" data-i18n="back">‹ Indietro</button>
+      </form>
+
+      <!-- RESET: codice + nuova password -->
+      <form class="auth-form" id="formReset" hidden>
+        <p class="verify-info" id="resetInfo"></p>
+        <label class="field"><span data-i18n="f_code">Codice di verifica</span>
+          <input id="rpCode" type="text" inputmode="numeric" maxlength="6" data-i18n-ph="ph_code" placeholder="______" /></label>
+        <label class="field"><span data-i18n="new_password">Nuova password</span>
+          <input id="rpPassword" type="password" autocomplete="new-password" data-i18n-ph="ph_newpass" placeholder="almeno 6 caratteri" /></label>
+        <button class="auth-btn" type="submit" data-i18n="reset_btn">Reimposta ed entra</button>
+        <button class="auth-link" id="resetResend" type="button" data-i18n="resend">Non l'hai ricevuto? Rinvia codice</button>
       </form>
 
       <!-- REGISTRAZIONE -->

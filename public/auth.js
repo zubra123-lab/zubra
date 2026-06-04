@@ -30,10 +30,12 @@ function showForm(which) {
   _("formLogin").hidden = which !== "login";
   _("formSignup").hidden = which !== "signup";
   _("formVerify").hidden = which !== "verify";
+  _("formForgot").hidden = which !== "forgot";
+  _("formReset").hidden = which !== "reset";
   _("tabLogin").classList.toggle("is-active", which === "login");
   _("tabSignup").classList.toggle("is-active", which === "signup");
-  // le tab si vedono solo tra login e signup, non in verifica
-  document.querySelector(".auth-tabs").style.display = which === "verify" ? "none" : "flex";
+  // le tab si vedono solo tra login e signup
+  document.querySelector(".auth-tabs").style.display = (which === "login" || which === "signup") ? "flex" : "none";
   authMsg("");
 }
 function showAuth() {
@@ -166,6 +168,46 @@ async function doResend() {
   authMsg(deliveryText(data.delivery, data.devCode), "ok");
 }
 
+// ---- Password dimenticata / reset ----
+let pendingResetContact = null;
+async function doForgot(e) {
+  if (e) e.preventDefault();
+  const contact = _("fpContact").value.trim();
+  if (!contact) return authMsg("Inserisci la tua email o numero.", "error");
+  authMsg("Invio in corso…");
+  const { ok, data } = await api("/auth/forgot", { contact });
+  if (!ok) return authMsg(data.error || "Invio non riuscito.", "error");
+  pendingResetContact = data.contact || contact;
+  showForm("reset");
+  _("resetInfo").textContent = data.devCode
+    ? t("dl_code") + " 👉 " + data.devCode
+    : t("reset_sent");
+  _("rpCode").value = ""; _("rpPassword").value = "";
+  _("rpCode").focus();
+}
+async function doReset(e) {
+  e.preventDefault();
+  const code = _("rpCode").value.trim();
+  const newPassword = _("rpPassword").value;
+  if (!pendingResetContact) return authMsg("Sessione scaduta. Ricomincia.", "error");
+  if (code.length < 4) return authMsg("Inserisci il codice ricevuto.", "error");
+  if (newPassword.length < 6) return authMsg("La nuova password deve avere almeno 6 caratteri.", "error");
+  authMsg("Reimposto…");
+  const { ok, data } = await api("/auth/reset", { contact: pendingResetContact, code, newPassword });
+  if (!ok) return authMsg(data.error || "Reset non riuscito.", "error");
+  setSession(data.token, data.user);
+  pendingResetContact = null;
+  onLoggedIn(data.user);
+}
+async function doForgotResend() {
+  if (!pendingResetContact) return;
+  authMsg("Rinvio codice…");
+  const { ok, data } = await api("/auth/forgot", { contact: pendingResetContact });
+  if (!ok) return authMsg(data.error || "Rinvio non riuscito.", "error");
+  _("resetInfo").textContent = data.devCode ? t("dl_code") + " 👉 " + data.devCode : t("reset_sent");
+  authMsg("");
+}
+
 // Aggiorna i testi dinamici quando cambia la lingua (chiamata da applyLang).
 function refreshDynamicTexts() {
   const s = getSession();
@@ -192,6 +234,13 @@ async function authInit() {
   _("formVerify").addEventListener("submit", doVerify);
   _("resendBtn").addEventListener("click", doResend);
   _("backToSignup").addEventListener("click", () => showForm("signup"));
+
+  // Password dimenticata / reset
+  _("forgotLink").addEventListener("click", () => showForm("forgot"));
+  _("forgotBack").addEventListener("click", () => showForm("login"));
+  _("formForgot").addEventListener("submit", doForgot);
+  _("formReset").addEventListener("submit", doReset);
+  _("resetResend").addEventListener("click", doForgotResend);
 
   // Impostazioni
   _("settingsBtn").addEventListener("click", openSettings);
