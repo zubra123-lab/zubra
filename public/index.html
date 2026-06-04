@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c1410" />
+  <title>Zubra — Scanner di animali</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Spline+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🦓</span>
+      <div class="brand-text">
+        <h1>Zubra</h1>
+        <p id="brandSub">bestiario degli animali reali</p>
+      </div>
+    </div>
+    <div class="badges">
+      <div class="coins" id="coinsBadge" title="Le tue monete">
+        <span class="coins-ico">🪙</span>
+        <span class="coins-num" id="coinsNum">0</span>
+      </div>
+      <div class="quota" id="quota" title="Scansioni rimaste (gratuite + bonus)">
+        <span class="quota-num" id="quotaNum">—</span>
+        <span class="quota-lbl" data-i18n="scan_short">scan</span>
+      </div>
+      <span class="pro-badge" id="proBadge" title="Account PRO: scansioni illimitate" hidden>⭐ PRO</span>
+      <button class="icon-btn ad-btn" id="adBtn" title="Guarda una pubblicità per 1 scansione gratis">📺</button>
+      <button class="icon-btn" id="settingsBtn" title="Impostazioni" hidden>⚙️</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===== Scanner ===== -->
+    <section class="scanner" id="scanner">
+      <label class="dropzone" id="dropzone" tabindex="0">
+        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
+        <div class="dz-inner" id="dzInner">
+          <div class="dz-ring"><span class="dz-icon">⌖</span></div>
+          <p class="dz-title" data-i18n="scan_title">Inquadra un animale</p>
+          <p class="dz-sub" data-i18n="scan_sub">Scatta una foto o caricane una dalla galleria</p>
+        </div>
+        <img id="preview" class="preview" alt="" hidden />
+        <div class="scanline" id="scanline" hidden></div>
+      </label>
+
+      <div class="scan-actions">
+        <button class="btn btn-ghost" id="btnGallery" type="button" data-i18n="gallery">🖼️ Galleria</button>
+        <button class="btn btn-primary" id="btnScan" type="button" disabled data-i18n="scan_btn">⌖ Scansiona</button>
+      </div>
+      <p class="status" id="status" role="status"></p>
+    </section>
+
+  </main>
+
+  <!-- ===== Scheda animale (modale) ===== -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden>
+    <article class="sheet" id="sheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="sheetClose" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll" id="sheetScroll"></div>
+    </article>
+  </div>
+
+  <!-- ===== Negozio (modale) ===== -->
+  <div class="sheet-backdrop" id="shopBackdrop" hidden>
+    <article class="sheet shop" id="shopSheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="shopClose" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll">
+        <div class="shop-head">
+          <span class="shop-emoji">🏪</span>
+          <h2 data-i18n="shop_title">Negozio</h2>
+          <p data-i18n="shop_desc">Spendi le monete guadagnate catturando animali per ottenere più scansioni!</p>
+          <div class="shop-wallet">
+            <span>🪙</span> <b id="shopCoins">0</b> <span data-i18n="coins_word">monete</span>
+            <span class="shop-sep">·</span>
+            <span>📷</span> <b id="shopScans">0</b> <span data-i18n="scans_left">scan rimaste</span>
+          </div>
+        </div>
+        <div class="shop-grid" id="shopGrid"></div>
+        <p class="shop-msg" id="shopMsg" role="status"></p>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===== Collezione (modale, stile negozio) ===== -->
+  <div class="sheet-backdrop" id="collBackdrop" hidden>
+    <article class="sheet coll" id="collSheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="collCloseBtn" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll">
+        <div class="shop-head">
+          <span class="shop-emoji">📚</span>
+          <h2 data-i18n="coll_title">La tua collezione</h2>
+          <p data-i18n="coll_desc">Tutti gli animali che hai catturato. Toccane uno per rivedere la scheda!</p>
+          <div class="shop-wallet">
+            <span>🐾</span> <b id="collCount">0</b> <span data-i18n="captured">catturati</span>
+          </div>
+        </div>
+        <div class="coll-grid" id="collGrid"></div>
+        <p class="coll-empty" id="collEmpty" data-i18n="coll_empty">Nessun animale catturato. Scansiona la tua prima creatura! 🐾</p>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===== Pubblicità premio (modale) ===== -->
+  <div class="sheet-backdrop" id="adBackdrop" hidden>
+    <article class="sheet ad" id="adSheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="adClose" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll">
+        <div class="shop-head">
+          <span class="shop-emoji">📺</span>
+          <h2 data-i18n="ad_title">Pubblicità</h2>
+          <p data-i18n="ad_sub">Guarda la pubblicità per ricevere 1 scansione gratis!</p>
+        </div>
+        <div class="ad-box" id="adBox"></div>
+        <div class="settings-body">
+          <button class="btn btn-primary set-action" id="adClaim" type="button" disabled></button>
+        </div>
+        <p class="shop-msg" id="adMsg" role="status"></p>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===== Impostazioni (modale) ===== -->
+  <div class="sheet-backdrop" id="settingsBackdrop" hidden>
+    <article class="sheet settings" id="settingsSheet" role="dialog" aria-modal="true">
+      <button class="sheet-close" id="settingsClose" aria-label="Chiudi">✕</button>
+      <div class="sheet-scroll">
+        <div class="shop-head">
+          <span class="shop-emoji">⚙️</span>
+          <h2 data-i18n="settings_title">Impostazioni</h2>
+          <p data-i18n="settings_desc">Il tuo account e le opzioni dell'app.</p>
+        </div>
+        <div class="settings-body">
+          <div class="set-card">
+            <div class="set-row"><span class="set-lbl" data-i18n="s_username">👤 Username</span><span class="set-val" id="setUsername">—</span></div>
+            <div class="set-row"><span class="set-lbl" data-i18n="s_contact">✉️ Contatto</span><span class="set-val" id="setContact">—</span></div>
+            <div class="set-row"><span class="set-lbl" data-i18n="s_plan">⭐ Piano</span><span class="set-val" id="setPlan">—</span></div>
+            <div class="set-row">
+              <span class="set-lbl" data-i18n="s_language">🌐 Lingua</span>
+              <select class="lang-select" id="langSelect" aria-label="Lingua">
+                <option value="it">🇮🇹 Italiano</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="en-AU">🇦🇺 English (AU)</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="pt">🇵🇹 Português</option>
+                <option value="pt-BR">🇧🇷 Português (Brasil)</option>
+                <option value="fr">🇫🇷 Français</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="ru">🇷🇺 Русский</option>
+                <option value="zh">🇨🇳 中文</option>
+                <option value="ja">🇯🇵 日本語</option>
+                <option value="hi">🇮🇳 हिन्दी</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-ghost set-action" id="setClearColl" type="button" data-i18n="clear_coll">🗑️ Svuota la collezione</button>
+          <button class="btn btn-danger set-action" id="setLogout" type="button" data-i18n="logout">⎋ Esci dall'account</button>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===== Barra inferiore: negozio al centro, collezione a destra ===== -->
+  <nav class="tabbar">
+    <button class="tab-fab" id="shopBtn" type="button" aria-label="Apri il negozio">
+      <span class="tab-fab-ico">🏪</span>
+      <span class="tab-fab-lbl" data-i18n="tab_shop">Negozio</span>
+    </button>
+    <button class="tab-fab tab-fab-coll" id="collBtn" type="button" aria-label="Apri la collezione">
+      <span class="tab-fab-ico">📚</span>
+      <span class="tab-fab-lbl" data-i18n="tab_coll">Collezione</span>
+    </button>
+  </nav>
+
+  <footer class="footer" data-i18n="footer">
+    Riconoscimento AI · le informazioni sono stime e possono contenere errori.
+  </footer>
+
+  <!-- ===== Schermata di accesso (overlay) ===== -->
+  <div class="auth" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="auth-emoji">🦓</span>
+        <h1>Zubra</h1>
+        <p id="authSubtitle" data-i18n="auth_sub">Accedi per iniziare a collezionare animali!</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab is-active" id="tabLogin" type="button" data-i18n="login">Accedi</button>
+        <button class="auth-tab" id="tabSignup" type="button" data-i18n="signup">Registrati</button>
+      </div>
+
+      <!-- LOGIN -->
+      <form class="auth-form" id="formLogin">
+        <label class="field"><span data-i18n="f_contact">Email o numero</span>
+          <input id="loginContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <label class="field"><span data-i18n="f_password">Password</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" data-i18n-ph="ph_password" placeholder="••••••" /></label>
+        <button class="auth-btn" type="submit" data-i18n="login">Accedi</button>
+      </form>
+
+      <!-- REGISTRAZIONE -->
+      <form class="auth-form" id="formSignup" hidden>
+        <label class="field"><span data-i18n="f_username">Username</span>
+          <input id="suUsername" type="text" autocomplete="nickname" data-i18n-ph="ph_username" placeholder="Il tuo nome da giocatore" /></label>
+        <label class="field"><span data-i18n="f_contact">Email o numero</span>
+          <input id="suContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <label class="field"><span data-i18n="f_password">Password</span>
+          <input id="suPassword" type="password" autocomplete="new-password" data-i18n-ph="ph_newpass" placeholder="almeno 6 caratteri" /></label>
+        <button class="auth-btn" type="submit" data-i18n="create_account">Crea account</button>
+      </form>
+
+      <!-- VERIFICA CODICE (solo registrazione) -->
+      <form class="auth-form" id="formVerify" hidden>
+        <p class="verify-info" id="verifyInfo"></p>
+        <label class="field"><span data-i18n="f_code">Codice di verifica</span>
+          <input id="verifyCode" type="text" inputmode="numeric" maxlength="6" data-i18n-ph="ph_code" placeholder="______" /></label>
+        <button class="auth-btn" type="submit" data-i18n="verify_login">Verifica e accedi</button>
+        <button class="auth-link" id="resendBtn" type="button" data-i18n="resend">Non l'hai ricevuto? Rinvia codice</button>
+        <button class="auth-link" id="backToSignup" type="button" data-i18n="back">‹ Indietro</button>
+      </form>
+
+      <p class="auth-msg" id="authMsg" role="status"></p>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+  <script src="auth.js"></script>
+</body>
+</html>

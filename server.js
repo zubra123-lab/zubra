@@ -1,0 +1,690 @@
+import dotenv from 'dotenv';
+import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Carica il .env dalla cartella del backend (non dalla cartella di avvio).
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+// ---- Configurazione (da variabili d'ambiente / .env) ----
+const PORT = Number(process.env.PORT) || 8787;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+// Provider AI alternativo: MiniMax (visione). Se impostato, ha priorità su Gemini.
+const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
+const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'MiniMax-Text-01';
+const MINIMAX_BASE = process.env.MINIMAX_BASE || 'https://api.minimax.io/v1';
+const AI_PROVIDER = MINIMAX_API_KEY ? 'minimax' : (GEMINI_API_KEY ? 'gemini' : 'none');
+// Quante scansioni gratuite al giorno per dispositivo.
+const DAILY_FREE_LIMIT = Number(process.env.DAILY_FREE_LIMIT) || 10;
+// Origini ammesse per il Web (CORS). "*" = tutte (comodo in sviluppo).
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+
+// ---- Invio codici di verifica (opzionale) ----
+// Email reali via Resend (https://resend.com) se imposti RESEND_API_KEY + MAIL_FROM.
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const MAIL_FROM = process.env.MAIL_FROM || 'Animal Scanner <onboarding@resend.dev>';
+// SMS reali via Twilio se imposti queste tre variabili.
+const TWILIO_SID = process.env.TWILIO_SID || '';
+const TWILIO_TOKEN = process.env.TWILIO_TOKEN || '';
+const TWILIO_FROM = process.env.TWILIO_FROM || '';
+// In modalità demo (nessun provider) il codice viene mostrato nell'app per provare.
+const AUTH_DEMO_MODE = !RESEND_API_KEY && !TWILIO_SID;
+
+// Password segreta PRO: chi si registra usando ESATTAMENTE questa password
+// ottiene scansioni illimitate e tutte le funzioni PRO.
+// Modificabile con PRO_PASSWORD nel .env.
+const PRO_PASSWORD = process.env.PRO_PASSWORD || ''; // vuoto = PRO-by-password disattivato
+
+if (!GEMINI_API_KEY) {
+  console.warn(
+    '[ATTENZIONE] GEMINI_API_KEY non impostata. Crea un file .env (vedi .env.example) ' +
+      'con la tua chiave da https://aistudio.google.com/apikey'
+  );
+}
+
+// ---- Conteggio scansioni per dispositivo (persistito su file) ----
+const dataDir = path.join(__dirname, 'data');
+const usageFile = path.join(dataDir, 'usage.json');
+fs.mkdirSync(dataDir, { recursive: true });
+
+/** @type {Record<string, { date: string, count: number, bonus?: number }>} */
+let usage = {};
+try {
+  usage = JSON.parse(fs.readFileSync(usageFile, 'utf8'));
+} catch {
+  usage = {};
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+let saveTimer = null;
+function persistUsageSoon() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    fs.writeFile(usageFile, JSON.stringify(usage), () => {});
+  }, 1000);
+}
+
+// Un dispositivo è PRO se appartiene a un utente loggato con flag pro.
+// (deviceId degli utenti loggati = "user-<contatto>").
+function isProDevice(deviceId) {
+  if (typeof deviceId === 'string' && deviceId.startsWith('user-')) {
+    const u = users[deviceId.slice(5)];
+    return !!(u && u.pro);
+  }
+  return false;
+}
+
+const PRO_UNLIMITED = 999999; // valore "praticamente illimitato" per i PRO
+
+/** Scansioni gratuite ancora disponibili oggi (esclude i bonus). */
+function freeLeftFor(deviceId) {
+  if (isProDevice(deviceId)) return PRO_UNLIMITED;
+  const e = usage[deviceId];
+  if (!e || e.date !== today()) return DAILY_FREE_LIMIT;
+  return Math.max(0, DAILY_FREE_LIMIT - e.count);
+}
+
+/** Scansioni bonus comprate col negozio (non scadono col giorno). */
+function bonusFor(deviceId) {
+  const e = usage[deviceId];
+  return e && e.bonus ? e.bonus : 0;
+}
+
+/** Quante scansioni restano in totale (gratuite di oggi + bonus). */
+function remainingFor(deviceId) {
+  return freeLeftFor(deviceId) + bonusFor(deviceId);
+}
+
+/** Aggiunge scansioni bonus al dispositivo. Ritorna il nuovo totale bonus. */
+function addBonus(deviceId, amount) {
+  const d = today();
+  let e = usage[deviceId];
+  if (!e) {
+    e = { date: d, count: 0, bonus: 0 };
+    usage[deviceId] = e;
+  }
+  e.bonus = (e.bonus || 0) + amount;
+  persistUsageSoon();
+  return e.bonus;
+}
+
+/** Consuma una scansione: prima le gratuite di oggi, poi i bonus. */
+function consume(deviceId) {
+  if (isProDevice(deviceId)) return true; // PRO: illimitato, non scala nulla
+  const d = today();
+  let e = usage[deviceId];
+  if (!e) {
+    e = { date: d, count: 0, bonus: 0 };
+    usage[deviceId] = e;
+  }
+  // Nuovo giorno: azzera il conteggio gratuito (i bonus restano).
+  if (e.date !== d) {
+    e.date = d;
+    e.count = 0;
+  }
+  if (e.count < DAILY_FREE_LIMIT) {
+    e.count += 1;        // usa una scansione gratuita
+    persistUsageSoon();
+    return true;
+  }
+  if ((e.bonus || 0) > 0) {
+    e.bonus -= 1;        // usa una scansione bonus
+    persistUsageSoon();
+    return true;
+  }
+  return false;
+}
+
+// ============================================================
+//  AUTENTICAZIONE (username, email/numero, password + codice)
+// ============================================================
+const usersFile = path.join(dataDir, 'users.json');
+/** @type {Record<string, any>} utenti indicizzati per "contatto" normalizzato */
+let users = {};
+try { users = JSON.parse(fs.readFileSync(usersFile, 'utf8')); } catch { users = {}; }
+function persistUsers() {
+  fs.writeFile(usersFile, JSON.stringify(users), () => {});
+}
+
+// Token di sessione in memoria (si azzerano al riavvio: basta rifare il login).
+/** @type {Map<string,string>} token -> contatto */
+const sessions = new Map();
+
+// Hashing password con scrypt (incluso in Node, niente dipendenze).
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return { salt, hash };
+}
+function verifyPassword(password, salt, hash) {
+  const h = crypto.scryptSync(password, salt, 64).toString('hex');
+  const a = Buffer.from(h), b = Buffer.from(hash);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Riconosce e normalizza il contatto: email oppure numero di telefono.
+function classifyContact(raw) {
+  const s = String(raw || '').trim();
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) {
+    return { type: 'email', value: s.toLowerCase() };
+  }
+  const digits = s.replace(/[\s\-().]/g, '');
+  if (/^\+?\d{6,15}$/.test(digits)) {
+    return { type: 'phone', value: digits };
+  }
+  return null;
+}
+
+function genCode() {
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+}
+function newToken() {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+// Invia il codice. Ritorna { delivery: 'email'|'sms'|'demo' }.
+async function sendVerificationCode(contact, type, code) {
+  try {
+    if (type === 'email' && RESEND_API_KEY) {
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: MAIL_FROM,
+          to: contact,
+          subject: 'Il tuo codice Zubra',
+          html: `<p>Ciao!</p><p>Il tuo codice di verifica è:</p>
+                 <p style="font-size:28px;font-weight:bold;letter-spacing:4px">${code}</p>
+                 <p>Scade tra 10 minuti.</p>`,
+        }),
+      });
+      if (r.ok) return { delivery: 'email' };
+      console.error('Resend errore', r.status, await r.text().catch(() => ''));
+    }
+    if (type === 'phone' && TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM) {
+      const body = new URLSearchParams({ To: contact, From: TWILIO_FROM, Body: `Codice Zubra: ${code}` });
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      });
+      if (r.ok) return { delivery: 'sms' };
+      console.error('Twilio errore', r.status, await r.text().catch(() => ''));
+    }
+  } catch (e) {
+    console.error('Invio codice fallito', e);
+  }
+  // Fallback demo: stampa il codice nel log del server.
+  console.log(`\n[CODICE VERIFICA] ${contact} -> ${code}\n`);
+  return { delivery: 'demo' };
+}
+
+function publicUser(u) {
+  return { username: u.username, contact: u.contact, contactType: u.contactType, verified: !!u.verified, pro: !!u.pro, coins: u.coins || 0 };
+}
+
+// ---- Identità dalla sessione (Bearer token); MAI dal body/query del client ----
+function authUser(req) {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const contact = token && sessions.get(token);
+  return contact ? users[contact] : null;
+}
+const uidOf = (u) => 'user-' + u.contact; // chiave quota/uso server-side
+
+// ---- Portafoglio monete (server-side, non manipolabile dal client) ----
+function getCoinsU(u) { return u.coins || 0; }
+function addCoinsU(u, n) { u.coins = Math.max(0, (u.coins || 0) + Math.round(Number(n) || 0)); persistUsers(); return u.coins; }
+function spendCoinsU(u, n) { if ((u.coins || 0) < n) return false; u.coins -= n; persistUsers(); return true; }
+
+// Pacchetti negozio: prezzi DECISI dal server (il client non può barare).
+const SHOP_PACKS = { p1: { scans: 1, price: 60 }, p3: { scans: 3, price: 150 }, p10: { scans: 10, price: 400 }, p25: { scans: 25, price: 850 } };
+
+// Pubblicità premio: cooldown + limite giornaliero.
+const AD_COOLDOWN_MS = 30 * 1000;
+const AD_DAILY_MAX = 30;
+
+// Rate limiter semplice in memoria.
+const rlMap = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const e = rlMap.get(key);
+  if (!e || now > e.resetAt) { rlMap.set(key, { count: 1, resetAt: now + windowMs }); return true; }
+  if (e.count >= max) return false;
+  e.count += 1; return true;
+}
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'ip';
+}
+
+// Anti-scansioni concorrenti (una per utente alla volta → niente race sulla quota).
+const scanning = new Set();
+
+// Stato utente per il client (monete + quota).
+function userState(u) {
+  const uid = uidOf(u);
+  return {
+    username: u.username, pro: !!u.pro, coins: getCoinsU(u),
+    remaining: remainingFor(uid), freeLeft: freeLeftFor(uid), bonus: bonusFor(uid),
+    dailyFreeLimit: DAILY_FREE_LIMIT,
+  };
+}
+
+// ---- App Express ----
+const app = express();
+app.use(express.json({ limit: '15mb' }));
+
+// Serve la web app statica (cartella public/) sullo stesso server.
+app.use(express.static(path.join(__dirname, 'public')));
+
+// CORS (necessario quando l'app gira come sito Web).
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+app.get('/health', (_req, res) => {
+  const model = AI_PROVIDER === 'minimax' ? MINIMAX_MODEL : AI_PROVIDER === 'gemini' ? GEMINI_MODEL : null;
+  res.json({ ok: true, provider: AI_PROVIDER, model, dailyFreeLimit: DAILY_FREE_LIMIT });
+});
+
+// Stato dell'utente (monete + quota). Richiede login.
+app.get('/me/state', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  res.json(userState(u));
+});
+
+// Negozio: acquisto pacchetto scansioni. Prezzo e monete verificati dal server.
+app.post('/shop/purchase', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  const pack = SHOP_PACKS[String((req.body || {}).packId || '')];
+  if (!pack) return res.status(400).json({ error: 'Pacchetto non valido.' });
+  if (getCoinsU(u) < pack.price) return res.status(400).json({ error: 'Monete insufficienti.' });
+  spendCoinsU(u, pack.price);
+  addBonus(uidOf(u), pack.scans);
+  res.json({ ok: true, ...userState(u) });
+});
+
+// Pubblicità premio: +1 scansione, con cooldown e limite giornaliero.
+app.post('/ads/reward', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  const now = Date.now();
+  const today = new Date().toISOString().slice(0, 10);
+  if (u.adDay !== today) { u.adDay = today; u.adCount = 0; }
+  if (now - (u.lastAdAt || 0) < AD_COOLDOWN_MS) {
+    return res.status(429).json({ error: 'Aspetta qualche secondo prima della prossima pubblicità.' });
+  }
+  if ((u.adCount || 0) >= AD_DAILY_MAX) {
+    return res.status(429).json({ error: 'Hai raggiunto il massimo di pubblicità di oggi.' });
+  }
+  u.lastAdAt = now; u.adCount = (u.adCount || 0) + 1;
+  addBonus(uidOf(u), 1);
+  persistUsers();
+  res.json({ ok: true, ...userState(u) });
+});
+
+// ---- Rotte autenticazione ----
+
+// Registrazione: crea un utente NON verificato e invia un codice.
+app.post('/auth/signup', async (req, res) => {
+  if (!rateLimit('signup:' + clientIp(req), 8, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi. Riprova tra qualche minuto.' });
+  }
+  const { username, contact, password } = req.body || {};
+  const uname = String(username || '').trim();
+  if (uname.length < 2 || uname.length > 20) {
+    return res.status(400).json({ error: 'Username tra 2 e 20 caratteri.' });
+  }
+  const c = classifyContact(contact);
+  if (!c) return res.status(400).json({ error: 'Inserisci una email valida o un numero di telefono.' });
+  if (String(password || '').length < 6) {
+    return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri.' });
+  }
+
+  const existing = users[c.value];
+  if (existing && existing.verified) {
+    return res.status(409).json({ error: 'Questo contatto è già registrato. Fai il login.' });
+  }
+
+  const { salt, hash } = hashPassword(String(password));
+  const code = genCode();
+  const isPro = !!PRO_PASSWORD && String(password) === PRO_PASSWORD;  // PRO se la password è quella segreta
+  users[c.value] = {
+    id: existing?.id || ('u-' + crypto.randomBytes(6).toString('hex')),
+    username: uname,
+    contact: c.value,
+    contactType: c.type,
+    salt, hash,
+    verified: false,
+    pro: isPro,
+    code,
+    codeExpires: Date.now() + 10 * 60 * 1000,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  };
+  persistUsers();
+
+  const { delivery } = await sendVerificationCode(c.value, c.type, code);
+  res.json({
+    ok: true,
+    needVerification: true,
+    contact: c.value,
+    contactType: c.type,
+    delivery,                                       // 'email' | 'sms' | 'demo'
+    // Se l'email/SMS NON è stato consegnato (demo o invio fallito), mostriamo
+    // il codice nell'app così la persona può comunque verificarsi.
+    devCode: delivery === 'demo' ? code : undefined,
+  });
+});
+
+// Verifica del codice (solo durante la registrazione).
+app.post('/auth/verify', (req, res) => {
+  const { contact, code } = req.body || {};
+  const c = classifyContact(contact);
+  const u = c && users[c.value];
+  if (!u) return res.status(404).json({ error: 'Utente non trovato.' });
+  if (u.verified) return res.status(400).json({ error: 'Account già verificato. Fai il login.' });
+  if (!u.code || Date.now() > u.codeExpires) {
+    return res.status(400).json({ error: 'Codice scaduto. Richiedine uno nuovo.' });
+  }
+  // Max 5 tentativi: dopo, il codice viene invalidato (anti brute-force).
+  if ((u.codeTries || 0) >= 5) {
+    delete u.code; delete u.codeExpires; u.codeTries = 0; persistUsers();
+    return res.status(429).json({ error: 'Troppi tentativi. Richiedi un nuovo codice.' });
+  }
+  if (String(code || '').trim() !== u.code) {
+    u.codeTries = (u.codeTries || 0) + 1; persistUsers();
+    return res.status(400).json({ error: 'Codice non corretto.' });
+  }
+  u.verified = true;
+  delete u.code; delete u.codeExpires; delete u.codeTries;
+  persistUsers();
+  const token = newToken();
+  sessions.set(token, u.contact);
+  res.json({ ok: true, token, user: publicUser(u) });
+});
+
+// Rinvia un nuovo codice (registrazione).
+app.post('/auth/resend', async (req, res) => {
+  const { contact } = req.body || {};
+  const c = classifyContact(contact);
+  const u = c && users[c.value];
+  if (!u) return res.status(404).json({ error: 'Utente non trovato.' });
+  if (u.verified) return res.status(400).json({ error: 'Account già verificato.' });
+  // Cooldown 60s tra un invio e l'altro.
+  if (!rateLimit('resend:' + c.value, 1, 60 * 1000)) {
+    return res.status(429).json({ error: 'Aspetta un minuto prima di chiedere un nuovo codice.' });
+  }
+  u.code = genCode();
+  u.codeExpires = Date.now() + 10 * 60 * 1000;
+  u.codeTries = 0;
+  persistUsers();
+  const { delivery } = await sendVerificationCode(u.contact, u.contactType, u.code);
+  res.json({ ok: true, delivery, devCode: delivery === 'demo' ? u.code : undefined });
+});
+
+// Login: solo contatto + password (nessun codice).
+app.post('/auth/login', (req, res) => {
+  if (!rateLimit('login:' + clientIp(req), 15, 5 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi di accesso. Riprova tra qualche minuto.' });
+  }
+  const { contact, password } = req.body || {};
+  const c = classifyContact(contact);
+  const u = c && users[c.value];
+  if (!u || !verifyPassword(String(password || ''), u.salt, u.hash)) {
+    return res.status(401).json({ error: 'Contatto o password errati.' });
+  }
+  if (!u.verified) {
+    return res.status(403).json({ error: 'Account non verificato. Completa la registrazione.', needVerification: true, contact: u.contact, contactType: u.contactType });
+  }
+  const token = newToken();
+  sessions.set(token, u.contact);
+  res.json({ ok: true, token, user: publicUser(u) });
+});
+
+// Chi sono (ripristina la sessione dal token salvato nell'app).
+app.get('/auth/me', (req, res) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const contact = sessions.get(token);
+  const u = contact && users[contact];
+  if (!u) return res.status(401).json({ error: 'Sessione non valida.' });
+  res.json({ ok: true, user: publicUser(u) });
+});
+
+// ---- Prompt e schema per Gemini ----
+const SYSTEM_PROMPT = `Sei il motore di riconoscimento di "Zubra", un'app in stile Pokédex per animali reali.
+Analizza la foto e identifica l'animale inquadrato. Rispondi sempre in italiano.
+
+Regole:
+- nome_comune: il nome comune italiano dell'animale (es. "Volpe rossa").
+- nome_scientifico: il nome scientifico latino (es. "Vulpes vulpes").
+- razza: solo per animali domestici con razza riconoscibile (cani, gatti, cavalli, conigli...). Se la razza non è determinabile o non ha senso, stringa vuota.
+- categoria: una tra mammifero, uccello, rettile, anfibio, pesce, insetto, aracnide, altro.
+- rarita: rarità in stile gioco, in base a quanto è raro incontrare dal vivo questo animale, considerando lo stato di conservazione:
+  * Comune: animali quotidiani (piccione, gatto, cane meticcio, mosca)
+  * Non Comune: si vedono ogni tanto (riccio, ghiandaia, lucertola)
+  * Rara: avvistamento notevole (volpe in città, falco pellegrino, cervo)
+  * Epica: avvistamento eccezionale (lupo, aquila reale, lontra)
+  * Mitica: specie molto rare o protette difficili da vedere (orso, lince, gipeto)
+  * Leggendaria: specie a grave rischio o quasi impossibili da vedere (lince iberica, leopardo delle nevi, tigre dell'Amur)
+  * Mega: creature eccezionali, giganti o iconiche al limite del mitologico (balena blu, squalo bianco, elefante, condor gigante)
+- valore_monete: valore collezionabile in monete di gioco, coerente con la rarità: Comune 10-50, Non Comune 51-200, Rara 201-1000, Epica 1001-5000, Mitica 5001-20000, Leggendaria 20001-80000, Mega 80001-250000.
+- prezzo_reale: se esiste un mercato legale (cuccioli di razza, pesci d'acquario), una stima in euro come testo, es. "800-1500 €". Per animali selvatici o specie protette scrivi "Non in vendita". Se non ha senso, stringa vuota.
+- descrizione: una piccola descrizione dell'animale (2-3 frasi: aspetto, comportamento, dimensioni tipiche).
+- pericolosita: una tra "Innocuo", "Poco pericoloso", "Pericoloso", "Molto pericoloso", in base al rischio reale per una persona (morsi, veleno, aggressività, malattie).
+- pericolo_dettaglio: breve spiegazione del perché (1 frase). Se innocuo, spiega che è innocuo.
+- prendibile: si può catturare/tenere legalmente? Risposta breve e chiara, es. "Sì, è un animale domestico", "No, è specie protetta: vietato catturarla", "Sconsigliato: serve permesso". Considera la legge italiana/UE sulla fauna protetta.
+- vendibile: si può vendere legalmente? Risposta breve, es. "Sì, allevatori autorizzati", "No, il commercio è vietato (CITES/specie protetta)".
+- cosa_mangia: di cosa si nutre (dieta), in modo conciso. Indica se è erbivoro/carnivoro/onnivoro e gli alimenti tipici.
+- come_trovarlo: dove e come avvistarlo in natura (zone, stagione, ora del giorno, abitudini utili per trovarlo).
+- habitat: com'è l'habitat ideale; se si può tenere, come ricreare un ambiente adatto (spazio, temperatura, vegetazione, acqua). Se è selvatico e non si tiene, descrivi l'ambiente naturale.
+- curiosita: una curiosità breve e divertente (1-2 frasi).
+- confidenza: quanto sei sicuro dell'identificazione, da 0 a 100.
+- Se nella foto NON c'è un animale: e_animale=false, tutti i campi testo vuoti, valore_monete=0, confidenza=0.
+- Se ci sono più animali, identifica quello più in evidenza.`;
+
+// Schema in formato Gemini (Type in MAIUSCOLO).
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    e_animale: { type: 'BOOLEAN' },
+    nome_comune: { type: 'STRING' },
+    nome_scientifico: { type: 'STRING' },
+    razza: { type: 'STRING' },
+    categoria: {
+      type: 'STRING',
+      enum: ['mammifero', 'uccello', 'rettile', 'anfibio', 'pesce', 'insetto', 'aracnide', 'altro'],
+    },
+    rarita: {
+      type: 'STRING',
+      enum: ['Comune', 'Non Comune', 'Rara', 'Epica', 'Mitica', 'Leggendaria', 'Mega'],
+    },
+    valore_monete: { type: 'INTEGER' },
+    prezzo_reale: { type: 'STRING' },
+    descrizione: { type: 'STRING' },
+    pericolosita: {
+      type: 'STRING',
+      enum: ['Innocuo', 'Poco pericoloso', 'Pericoloso', 'Molto pericoloso'],
+    },
+    pericolo_dettaglio: { type: 'STRING' },
+    prendibile: { type: 'STRING' },
+    vendibile: { type: 'STRING' },
+    cosa_mangia: { type: 'STRING' },
+    come_trovarlo: { type: 'STRING' },
+    habitat: { type: 'STRING' },
+    curiosita: { type: 'STRING' },
+    confidenza: { type: 'INTEGER' },
+  },
+  required: [
+    'e_animale', 'nome_comune', 'nome_scientifico', 'razza', 'categoria',
+    'rarita', 'valore_monete', 'prezzo_reale', 'descrizione', 'pericolosita',
+    'pericolo_dettaglio', 'prendibile', 'vendibile', 'cosa_mangia',
+    'come_trovarlo', 'habitat', 'curiosita', 'confidenza',
+  ],
+};
+
+// Istruzione JSON per provider senza schema nativo (MiniMax).
+const JSON_INSTRUCTION = `Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, niente markdown) con ESATTAMENTE queste chiavi:
+{"e_animale":bool,"nome_comune":str,"nome_scientifico":str,"razza":str,"categoria":"mammifero|uccello|rettile|anfibio|pesce|insetto|aracnide|altro","rarita":"Comune|Non Comune|Rara|Epica|Mitica|Leggendaria|Mega","valore_monete":int,"prezzo_reale":str,"descrizione":str,"pericolosita":"Innocuo|Poco pericoloso|Pericoloso|Molto pericoloso","pericolo_dettaglio":str,"prendibile":str,"vendibile":str,"cosa_mangia":str,"come_trovarlo":str,"habitat":str,"curiosita":str,"confidenza":int}`;
+
+// Estrae un oggetto JSON dal testo del modello (robusto a testo extra/markdown).
+function parseAnimalJson(text) {
+  try { return JSON.parse(text); } catch {}
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a >= 0 && b > a) {
+    try { return JSON.parse(text.slice(a, b + 1)); } catch {}
+  }
+  const e = new Error('JSON non valido dalla AI');
+  e.userMessage = 'Risposta AI non valida. Riprova.';
+  throw e;
+}
+
+// --- Provider: Google Gemini ---
+async function recognizeWithGemini(imageBase64, mimeType) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
+        { text: "Identifica l'animale in questa foto." },
+      ],
+    }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA, temperature: 0.4 },
+  };
+  let r;
+  try {
+    r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120000),
+    });
+  } catch {
+    const e = new Error('net'); e.userMessage = 'AI non raggiungibile. Riprova tra poco.'; throw e;
+  }
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '');
+    console.error('Errore Gemini', r.status, detail.slice(0, 500));
+    const e = new Error('gemini');
+    e.userMessage = r.status === 429 ? 'Servizio AI sovraccarico. Riprova tra poco.' : 'Errore del servizio AI. Riprova.';
+    throw e;
+  }
+  const data = await r.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) { const e = new Error('empty'); e.userMessage = 'Risposta AI vuota. Riprova.'; throw e; }
+  return parseAnimalJson(text);
+}
+
+// --- Provider: MiniMax (visione) ---
+async function recognizeWithMiniMax(imageBase64, mimeType) {
+  const body = {
+    model: MINIMAX_MODEL,
+    // M3 è un modello "che ragiona": serve spazio sia per il ragionamento sia
+    // per l'output JSON, altrimenti il contenuto finale esce vuoto.
+    max_tokens: 6000,
+    temperature: 0.3,
+    messages: [
+      { role: 'system', name: 'AnimalScanner', content: SYSTEM_PROMPT + '\n\n' + JSON_INSTRUCTION },
+      { role: 'user', name: 'utente', content: [
+        { type: 'text', text: "Identifica l'animale in questa foto e rispondi SOLO con il JSON richiesto." },
+        { type: 'image_url', image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` } },
+      ]},
+    ],
+  };
+  let r;
+  try {
+    r = await fetch(`${MINIMAX_BASE}/text/chatcompletion_v2`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${MINIMAX_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120000),
+    });
+  } catch {
+    const e = new Error('net'); e.userMessage = 'AI non raggiungibile. Riprova tra poco.'; throw e;
+  }
+  const data = await r.json().catch(() => null);
+  const sc = data?.base_resp?.status_code;
+  if (sc && sc !== 0) {
+    const msg = data.base_resp.status_msg || 'errore';
+    console.error('Errore MiniMax', sc, msg);
+    const e = new Error('minimax');
+    e.userMessage = `MiniMax: ${msg}` + (sc === 2061 ? ' (attiva un modello nel tuo piano MiniMax)' : '');
+    throw e;
+  }
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) { const e = new Error('empty'); e.userMessage = 'Risposta AI vuota. Riprova.'; throw e; }
+  return parseAnimalJson(typeof text === 'string' ? text : JSON.stringify(text));
+}
+
+// ---- Endpoint principale: riconoscimento (richiede login) ----
+app.post('/scan', async (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+
+  const { imageBase64, mimeType } = req.body || {};
+  if (!imageBase64 || typeof imageBase64 !== 'string') {
+    return res.status(400).json({ error: 'Immagine mancante.' });
+  }
+  if (AI_PROVIDER === 'none') {
+    return res.status(500).json({ error: 'Server non configurato (manca la chiave AI).' });
+  }
+
+  const uid = uidOf(u);
+
+  // Limite (gratuite di oggi + bonus). I PRO sono illimitati.
+  if (remainingFor(uid) <= 0) {
+    return res.status(429).json({
+      error: `Hai finito le scansioni. Guarda una pubblicità 📺 o usa il negozio 🏪!`,
+      ...userState(u),
+    });
+  }
+  // Una sola scansione per volta per utente (evita doppi addebiti / race).
+  if (scanning.has(uid)) {
+    return res.status(429).json({ error: 'Hai già una scansione in corso, attendi.' });
+  }
+  scanning.add(uid);
+  try {
+    let result;
+    try {
+      result = AI_PROVIDER === 'minimax'
+        ? await recognizeWithMiniMax(imageBase64, mimeType)
+        : await recognizeWithGemini(imageBase64, mimeType);
+    } catch (e) {
+      return res.status(502).json({ error: e?.userMessage || 'Errore del servizio AI. Riprova.' });
+    }
+
+    // Consuma una scansione e accredita le monete solo se è un animale.
+    if (result.e_animale) {
+      consume(uid);
+      addCoinsU(u, Number(result.valore_monete) || 0);
+    }
+    return res.json({ result, ...userState(u) });
+  } catch (err) {
+    console.error('Errore /scan', err);
+    return res.status(500).json({ error: 'Errore interno del server.' });
+  } finally {
+    scanning.delete(uid);
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Animal Scanner backend in ascolto su http://localhost:${PORT}`);
+  const modelLabel = AI_PROVIDER === 'minimax' ? `MiniMax (${MINIMAX_MODEL})` : AI_PROVIDER === 'gemini' ? GEMINI_MODEL : 'NESSUNO (configura una chiave AI)';
+  console.log(`Provider AI: ${AI_PROVIDER} · Modello: ${modelLabel} · Limite gratuito/giorno: ${DAILY_FREE_LIMIT}`);
+});

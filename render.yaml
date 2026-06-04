@@ -1,0 +1,22 @@
+# Configurazione Render per Zubra (https://render.com)
+# Crea un Web Service Node a partire da questo repo.
+services:
+  - type: web
+    name: zubra
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      # I VALORI SEGRETI si impostano nella dashboard di Render (NON qui).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: PRO_PASSWORD
+        sync: false
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: MINIMAX_MODEL
+        value: MiniMax-M3
