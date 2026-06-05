@@ -161,26 +161,48 @@ async function refreshState() {
   } catch { /* offline: lascia i valori attuali */ }
 }
 
+// Mostra il messaggio GRANDE di rifiuto AL POSTO della foto (foto rimossa).
+function rejectPhoto() {
+  pending = null;
+  const prev = $("preview");
+  prev.hidden = true; prev.src = "";
+  $("dropzone").classList.remove("has-image");
+  $("dropzone").classList.add("rejected");
+  $("dzInner").style.opacity = "1";
+  $("dzIcon").textContent = "🚫";
+  $("dzTitle").textContent = t("photo_blocked_title");
+  $("dzSub").textContent = t("photo_blocked_sub");
+  $("btnScan").disabled = true;
+  setStatus("");
+}
+
 // ---- Selezione immagine ----
 async function onFile(file) {
   if (!file) return;
   setStatus("Preparazione immagine…");
   try {
+    // Prima controlla che sia una foto vera (EXIF di fotocamera).
+    const real = await hasCameraExif(file);
+    if (!real) { rejectPhoto(); return; }
+
     // immagine per l'AI (più grande) e miniatura per la collezione (più piccola)
     const [full, thumb] = await Promise.all([
       processImage(file, 1024),
       processImage(file, 420),
     ]);
-    const real = await hasCameraExif(file);
-    pending = { base64: full.base64, mimeType: full.mimeType, thumbDataUrl: thumb.dataUrl, real };
+    pending = { base64: full.base64, mimeType: full.mimeType, thumbDataUrl: thumb.dataUrl, real: true };
+    // ripristina lo stato normale del riquadro (in caso fosse "rejected")
+    $("dropzone").classList.remove("rejected");
+    $("dzIcon").textContent = "⌖";
+    $("dzTitle").textContent = t("scan_title");
+    $("dzSub").textContent = t("scan_sub");
     const prev = $("preview");
     prev.src = full.dataUrl;
     prev.hidden = false;
     $("dzInner").style.opacity = "0";
     $("dropzone").classList.add("has-image");
     $("btnScan").disabled = false;
-    if (!real) setStatus(t("photo_internet_blocked"), "error");
-    else setStatus("Pronto. Premi «Scansiona».", "ok");
+    setStatus("Pronto. Premi «Scansiona».", "ok");
   } catch (e) {
     setStatus(e.message || "Errore con l'immagine", "error");
   }
@@ -272,6 +294,10 @@ function resetScanner() {
   $("preview").src = "";
   $("dzInner").style.opacity = "1";
   $("dropzone").classList.remove("has-image");
+  $("dropzone").classList.remove("rejected");
+  $("dzIcon").textContent = "⌖";
+  $("dzTitle").textContent = t("scan_title");
+  $("dzSub").textContent = t("scan_sub");
   $("btnScan").disabled = true;
 }
 
@@ -597,7 +623,9 @@ function init() {
   const dz = $("dropzone");
   const input = $("fileInput");
 
-  input.addEventListener("change", (e) => onFile(e.target.files[0]));
+  input.addEventListener("change", (e) => { onFile(e.target.files[0]); e.target.value = ""; });
+  // 📷 Scatta = apre la fotocamera (capture). 🖼️ Galleria = scegli un file.
+  $("btnCamera").addEventListener("click", (e) => { e.preventDefault(); input.setAttribute("capture", "environment"); input.click(); });
   $("btnGallery").addEventListener("click", (e) => { e.preventDefault(); input.removeAttribute("capture"); input.click(); });
   $("btnScan").addEventListener("click", () => (busyScanning ? cancelScan() : scan()));
 
@@ -610,8 +638,8 @@ function init() {
     const f = e.dataTransfer?.files?.[0];
     if (f) onFile(f);
   });
-  // ripristina capture quando si riapre dalla dropzone (foto)
-  dz.addEventListener("click", () => input.setAttribute("capture", "environment"));
+  // toccare il riquadro grande apre il selettore (fotocamera o galleria)
+  dz.addEventListener("click", () => input.removeAttribute("capture"));
 
   $("sheetClose").addEventListener("click", closeSheet);
   $("sheetBackdrop").addEventListener("click", (e) => { if (e.target === $("sheetBackdrop")) closeSheet(); });

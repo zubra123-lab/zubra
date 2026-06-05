@@ -42,18 +42,19 @@
       <label class="dropzone" id="dropzone" tabindex="0">
         <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
         <div class="dz-inner" id="dzInner">
-          <div class="dz-ring"><span class="dz-icon">⌖</span></div>
-          <p class="dz-title" data-i18n="scan_title">Inquadra un animale</p>
-          <p class="dz-sub" data-i18n="scan_sub">Scatta una foto o caricane una dalla galleria</p>
+          <div class="dz-ring"><span class="dz-icon" id="dzIcon">⌖</span></div>
+          <p class="dz-title" id="dzTitle" data-i18n="scan_title">Inquadra un animale</p>
+          <p class="dz-sub" id="dzSub" data-i18n="scan_sub">Scatta una foto o caricane una dalla galleria</p>
         </div>
         <img id="preview" class="preview" alt="" hidden />
         <div class="scanline" id="scanline" hidden></div>
       </label>
 
       <div class="scan-actions">
+        <button class="btn btn-ghost" id="btnCamera" type="button" data-i18n="camera">📷 Scatta</button>
         <button class="btn btn-ghost" id="btnGallery" type="button" data-i18n="gallery">🖼️ Galleria</button>
-        <button class="btn btn-primary" id="btnScan" type="button" disabled data-i18n="scan_btn">⌖ Scansiona</button>
       </div>
+      <button class="btn btn-primary btn-scan-main" id="btnScan" type="button" disabled data-i18n="scan_btn">⌖ Scansiona</button>
       <p class="status" id="status" role="status"></p>
     </section>
 
