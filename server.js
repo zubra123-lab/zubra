@@ -51,6 +51,47 @@ const dataDir = path.join(__dirname, 'data');
 const usageFile = path.join(dataDir, 'usage.json');
 fs.mkdirSync(dataDir, { recursive: true });
 
+// ---- Persistenza: Postgres se DATABASE_URL impostato, altrimenti file. ----
+// Con un database gli account/monete/sessioni diventano PERMANENTI (non si
+// azzerano ai redeploy). Senza, funziona come prima (file, effimero su Render).
+const DATABASE_URL = process.env.DATABASE_URL || '';
+let pgPool = null, dbReady = false;
+const _saveTimers = {};
+function _fileFor(k) { return path.join(dataDir, k + '.json'); }
+function saveKV(k, value) {
+  if (_saveTimers[k]) return;               // debounce per chiave (max 1 scrittura/0.8s)
+  _saveTimers[k] = setTimeout(async () => {
+    _saveTimers[k] = null;
+    if (dbReady) {
+      try {
+        await pgPool.query('INSERT INTO kv(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=$2', [k, JSON.stringify(value)]);
+        return;
+      } catch (e) { console.error('DB save ' + k + ' fallita, uso file:', e.message); }
+    }
+    fs.writeFile(_fileFor(k), JSON.stringify(value), () => {});
+  }, 800);
+}
+async function initStore() {
+  if (!DATABASE_URL) { console.log('Persistenza: FILE (nessun DATABASE_URL).'); return; }
+  try {
+    const pg = await import('pg');
+    pgPool = new pg.default.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
+    await pgPool.query('CREATE TABLE IF NOT EXISTS kv (k text PRIMARY KEY, v jsonb)');
+    const r = await pgPool.query("SELECT k, v FROM kv WHERE k IN ('users','usage','sessions')");
+    const got = {};
+    for (const row of r.rows) got[row.k] = row.v;
+    if (got.users && typeof got.users === 'object') users = got.users;
+    if (got.usage && typeof got.usage === 'object') usage = got.usage;
+    if (Array.isArray(got.sessions)) { sessions.clear(); for (const [tk, c] of got.sessions) sessions.set(tk, c); }
+    dbReady = true;
+    console.log('Persistenza: POSTGRES attivo (account permanenti). 🎉');
+  } catch (e) {
+    console.error('Persistenza DB non disponibile, uso file:', e.message);
+    dbReady = false;
+  }
+}
+function persistSessions() { saveKV('sessions', [...sessions.entries()]); }
+
 /** @type {Record<string, { date: string, count: number, bonus?: number }>} */
 let usage = {};
 try {
@@ -63,14 +104,7 @@ function today() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-let saveTimer = null;
-function persistUsageSoon() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    fs.writeFile(usageFile, JSON.stringify(usage), () => {});
-  }, 1000);
-}
+function persistUsageSoon() { saveKV('usage', usage); }
 
 // Un dispositivo è PRO se appartiene a un utente loggato con flag pro.
 // (deviceId degli utenti loggati = "user-<contatto>").
@@ -150,9 +184,7 @@ const usersFile = path.join(dataDir, 'users.json');
 /** @type {Record<string, any>} utenti indicizzati per "contatto" normalizzato */
 let users = {};
 try { users = JSON.parse(fs.readFileSync(usersFile, 'utf8')); } catch { users = {}; }
-function persistUsers() {
-  fs.writeFile(usersFile, JSON.stringify(users), () => {});
-}
+function persistUsers() { saveKV('users', users); }
 
 // Token di sessione in memoria (si azzerano al riavvio: basta rifare il login).
 /** @type {Map<string,string>} token -> contatto */
@@ -230,7 +262,7 @@ async function sendVerificationCode(contact, type, code) {
 }
 
 function publicUser(u) {
-  return { username: u.username, contact: u.contact, contactType: u.contactType, verified: !!u.verified, pro: !!u.pro, coins: u.coins || 0 };
+  return { username: u.username, contact: u.contact, contactType: u.contactType, verified: !!u.verified, pro: !!u.pro, coins: u.coins || 0, avatar: u.avatar || '' };
 }
 
 // ---- Identità dalla sessione (Bearer token); MAI dal body/query del client ----
@@ -275,7 +307,7 @@ function userState(u) {
   return {
     username: u.username, pro: !!u.pro, coins: getCoinsU(u),
     remaining: remainingFor(uid), freeLeft: freeLeftFor(uid), bonus: bonusFor(uid),
-    dailyFreeLimit: DAILY_FREE_LIMIT,
+    dailyFreeLimit: DAILY_FREE_LIMIT, avatar: u.avatar || '',
   };
 }
 
@@ -414,7 +446,7 @@ app.post('/auth/verify', (req, res) => {
   delete u.code; delete u.codeExpires; delete u.codeTries;
   persistUsers();
   const token = newToken();
-  sessions.set(token, u.contact);
+  sessions.set(token, u.contact); persistSessions();
   res.json({ ok: true, token, user: publicUser(u) });
 });
 
@@ -452,7 +484,7 @@ app.post('/auth/login', (req, res) => {
     return res.status(403).json({ error: 'Account non verificato. Completa la registrazione.', needVerification: true, contact: u.contact, contactType: u.contactType });
   }
   const token = newToken();
-  sessions.set(token, u.contact);
+  sessions.set(token, u.contact); persistSessions();
   res.json({ ok: true, token, user: publicUser(u) });
 });
 
@@ -506,26 +538,69 @@ app.post('/auth/reset', (req, res) => {
   delete u.resetCode; delete u.resetExpires; delete u.resetTries;
   persistUsers();
   const token = newToken();
-  sessions.set(token, u.contact);
+  sessions.set(token, u.contact); persistSessions();
   res.json({ ok: true, token, user: publicUser(u) });
 });
 
-// Classifica mondiale delle monete (top 20).
+// Classifica mondiale delle monete (top 20). Esclude i nascosti dall'admin.
 app.get('/leaderboard', (req, res) => {
-  const top = Object.values(users)
-    .filter((u) => u.verified)
-    .map((u) => ({ username: u.username, coins: u.coins || 0, pro: !!u.pro }))
+  const visible = Object.values(users).filter((u) => u.verified && !u.lbHidden);
+  const top = visible
+    .map((u) => ({ username: u.username, coins: u.coins || 0, pro: !!u.pro, avatar: u.avatar || '' }))
     .sort((a, b) => b.coins - a.coins)
     .slice(0, 20);
   // Posizione dell'utente che chiede (se loggato).
   let me = null;
   const who = authUser(req);
   if (who) {
-    const all = Object.values(users).filter((u) => u.verified).sort((a, b) => (b.coins || 0) - (a.coins || 0));
+    const all = visible.slice().sort((a, b) => (b.coins || 0) - (a.coins || 0));
     const rank = all.findIndex((u) => u.contact === who.contact);
-    me = { username: who.username, coins: who.coins || 0, rank: rank >= 0 ? rank + 1 : null, total: all.length };
+    me = { username: who.username, coins: who.coins || 0, rank: rank >= 0 ? rank + 1 : null, total: all.length, admin: isAdminPwdSet() };
   }
   res.json({ top, me });
+});
+
+// Solo il creatore (chi conosce la password segreta PRO) può rimuovere
+// qualcuno dalla classifica. NON serve essere loggati come quell'utente.
+app.post('/admin/lb-remove', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!PRO_PASSWORD || String(password || '') !== PRO_PASSWORD) {
+    return res.status(403).json({ error: 'Password segreta errata.' });
+  }
+  const target = Object.values(users).find((u) => u.username === String(username || ''));
+  if (!target) return res.status(404).json({ error: 'Utente non trovato.' });
+  target.lbHidden = true;
+  persistUsers();
+  res.json({ ok: true });
+});
+function isAdminPwdSet() { return !!PRO_PASSWORD; }
+
+// Imposta la foto profilo (immagine di un animale catturato). Richiede login.
+app.post('/me/avatar', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  const img = String((req.body || {}).image || '');
+  if (img && !/^data:image\/(jpeg|png|webp);base64,/.test(img)) {
+    return res.status(400).json({ error: 'Immagine non valida.' });
+  }
+  if (img.length > 400 * 1024) return res.status(400).json({ error: 'Immagine troppo grande.' });
+  u.avatar = img; // stringa vuota = rimuove
+  persistUsers();
+  res.json({ ok: true, avatar: u.avatar });
+});
+
+// Premio per una partita vinta all'Arena (con cap giornaliero anti-abuso).
+app.post('/game/reward', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  const today = new Date().toISOString().slice(0, 10);
+  if (u.gameDay !== today) { u.gameDay = today; u.gameWins = 0; }
+  if ((u.gameWins || 0) >= 15) {
+    return res.status(429).json({ error: 'Hai raggiunto il massimo di premi partita di oggi.', ...userState(u) });
+  }
+  u.gameWins = (u.gameWins || 0) + 1;
+  addCoinsU(u, 40); // +40 monete a vittoria
+  res.json({ ok: true, ...userState(u) });
 });
 
 // Chi sono (ripristina la sessione dal token salvato nell'app).
@@ -761,8 +836,11 @@ app.post('/scan', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Animal Scanner backend in ascolto su http://localhost:${PORT}`);
-  const modelLabel = AI_PROVIDER === 'minimax' ? `MiniMax (${MINIMAX_MODEL})` : AI_PROVIDER === 'gemini' ? GEMINI_MODEL : 'NESSUNO (configura una chiave AI)';
-  console.log(`Provider AI: ${AI_PROVIDER} · Modello: ${modelLabel} · Limite gratuito/giorno: ${DAILY_FREE_LIMIT}`);
+// Avvia lo storage (DB se disponibile) e POI il server.
+initStore().finally(() => {
+  app.listen(PORT, () => {
+    console.log(`Zubra backend in ascolto su http://localhost:${PORT}`);
+    const modelLabel = AI_PROVIDER === 'minimax' ? `MiniMax (${MINIMAX_MODEL})` : AI_PROVIDER === 'gemini' ? GEMINI_MODEL : 'NESSUNO (configura una chiave AI)';
+    console.log(`Provider AI: ${AI_PROVIDER} · Modello: ${modelLabel} · Limite gratuito/giorno: ${DAILY_FREE_LIMIT}`);
+  });
 });

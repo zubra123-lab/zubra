@@ -36,14 +36,31 @@ function authHeaders(json) {
 }
 
 // Stato lato server (monete + scansioni): la fonte di verità è il server.
-let serverState = { coins: 0, remaining: "—", pro: false };
+let serverState = { coins: 0, remaining: "—", pro: false, avatar: "" };
 function applyState(d) {
   if (!d) return;
   if (typeof d.coins === "number") serverState.coins = d.coins;
   if (typeof d.pro === "boolean") serverState.pro = d.pro;
+  if (typeof d.avatar === "string") serverState.avatar = d.avatar;
   if (d.remaining !== undefined && d.remaining !== null) serverState.remaining = d.remaining;
   renderCoins();
   setQuotaDisplay();
+  renderAvatar();
+}
+function renderAvatar() {
+  const img = document.getElementById("avatarImg");
+  if (!img) return;
+  if (serverState.avatar) { img.src = serverState.avatar; img.hidden = false; }
+  else { img.hidden = true; img.src = ""; }
+}
+// Imposta la foto profilo da un'immagine di un animale catturato.
+async function setAvatar(image) {
+  try {
+    const r = await fetch(`${API_BASE}/me/avatar`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({ image }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) { serverState.avatar = d.avatar; renderAvatar(); alert(t("avatar_done")); }
+    else alert(d.error || "Errore");
+  } catch { alert("Server non raggiungibile."); }
 }
 
 // Pacchetti acquistabili nel negozio: scansioni extra in cambio di monete.
@@ -410,12 +427,16 @@ function openSheet(entry, isNew) {
         <div class="i-txt">${esc(r.curiosita)}</div>
       </div>` : ""}
 
+    <div class="info">
+      <button class="btn btn-ghost" id="btnAvatar" type="button" style="width:100%">${t("set_avatar")}</button>
+    </div>
     <div class="sheet-foot">
       <button class="btn btn-danger" id="btnDelete" type="button">${t("r_delete")}</button>
       <button class="btn btn-primary" id="btnCloseSheet" type="button">${isNew ? t("r_add") : t("r_close")}</button>
     </div>
   `;
 
+  $("btnAvatar").addEventListener("click", () => setAvatar(entry.image));
   $("btnDelete").addEventListener("click", () => {
     if (confirm(`Eliminare "${r.nome_comune}" dalla collezione?`)) {
       deleteEntry(entry.id);
@@ -476,16 +497,34 @@ async function openLeaderboard() {
     if (!top.length) { $("lbList").innerHTML = `<p class="coll-empty">${t("lb_empty")}</p>`; return; }
     const medal = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`);
     const me = d.me && d.me.username;
+    const isAdmin = isPro(); // il creatore (PRO) vede il tasto rimuovi (poi serve la password)
     $("lbList").innerHTML = top.map((u, i) => `
       <div class="lb-row${me && u.username === me ? " is-me" : ""}">
         <span class="lb-rank">${medal(i)}</span>
+        ${u.avatar ? `<img class="lb-av" src="${esc(u.avatar)}" alt="" />` : `<span class="lb-av lb-av-ph">🦓</span>`}
         <span class="lb-name">${esc(u.username)}${u.pro ? " ⭐" : ""}</span>
         <span class="lb-coins">🪙 ${Number(u.coins || 0).toLocaleString("it-IT")}</span>
+        ${isAdmin ? `<button class="lb-del" data-name="${esc(u.username)}" title="Rimuovi">✕</button>` : ""}
       </div>`).join("");
+    if (isAdmin) {
+      $("lbList").querySelectorAll(".lb-del").forEach((b) =>
+        b.addEventListener("click", () => adminRemoveFromLb(b.getAttribute("data-name"))));
+    }
     if (d.me && d.me.rank) $("lbMe").textContent = t("lb_you", d.me.rank, d.me.total);
   } catch {
     $("lbList").innerHTML = `<p class="shop-msg error">Server non raggiungibile.</p>`;
   }
+}
+// Rimozione dalla classifica: solo con la password segreta (creatore).
+async function adminRemoveFromLb(name) {
+  const password = prompt(t("lb_remove_prompt", name));
+  if (!password) return;
+  try {
+    const r = await fetch(`${API_BASE}/admin/lb-remove`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({ username: name, password }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) { alert(t("lb_removed")); openLeaderboard(); }
+    else alert(d.error || t("lb_remove_err"));
+  } catch { alert("Server non raggiungibile."); }
 }
 
 // ---- Pubblicità premio (guarda un annuncio -> 1 scansione gratis) ----
@@ -618,16 +657,156 @@ async function buyPack(pack) {
   }
 }
 
+// ---- Fotocamera in-app (la foto scattata qui è REALE → salta il controllo EXIF) ----
+let camStream = null;
+async function openCamera() {
+  $("camMsg").textContent = "";
+  $("camBackdrop").hidden = false;
+  document.body.style.overflow = "hidden";
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    $("camVideo").srcObject = camStream;
+  } catch (e) {
+    $("camMsg").textContent = t("cam_denied");
+  }
+}
+function closeCamera() {
+  if (camStream) { camStream.getTracks().forEach((tr) => tr.stop()); camStream = null; }
+  const v = $("camVideo"); if (v) v.srcObject = null;
+  $("camBackdrop").hidden = true;
+  document.body.style.overflow = "";
+}
+function shootCamera() {
+  const v = $("camVideo");
+  if (!v || !v.videoWidth) return;
+  const draw = (maxDim) => {
+    const s = Math.min(1, maxDim / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.round(v.videoWidth * s), h = Math.round(v.videoHeight * s);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d").drawImage(v, 0, 0, w, h);
+    return c.toDataURL("image/jpeg", 0.85);
+  };
+  const full = draw(1024), thumb = draw(420);
+  pending = { base64: full.split(",")[1], mimeType: "image/jpeg", thumbDataUrl: thumb, real: true };
+  const prev = $("preview");
+  prev.src = full; prev.hidden = false;
+  $("dropzone").classList.remove("rejected");
+  $("dropzone").classList.add("has-image");
+  $("dzInner").style.opacity = "0";
+  $("btnScan").disabled = false;
+  setStatus("Pronto. Premi «Scansiona».", "ok");
+  closeCamera();
+}
+
+// ---- Arena: gioco di carte (attacco/difesa, 3 round) ----
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+function clampN(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function animalStats(r) {
+  const ri = Math.max(0, RARITIES.indexOf(r.rarita));
+  const base = 20 + ri * 11;
+  const dl = ["Innocuo", "Poco pericoloso", "Pericoloso", "Molto pericoloso"].indexOf(r.pericolosita);
+  const h = hashStr((r.nome_comune || "") + (r.nome_scientifico || ""));
+  const atk = clampN(base + Math.max(0, dl) * 6 + (h % 9) - 2, 5, 99);
+  const def = clampN(base + (3 - Math.max(0, dl)) * 4 + ((h >> 3) % 9) - 2, 5, 99);
+  return { atk, def };
+}
+const WILD = [{ e: "🐺", n: "Lupo" }, { e: "🦅", n: "Aquila" }, { e: "🦈", n: "Squalo" }, { e: "🐍", n: "Serpente" }, { e: "🦂", n: "Scorpione" }, { e: "🐅", n: "Tigre" }, { e: "🦏", n: "Rinoceronte" }, { e: "🐗", n: "Cinghiale" }, { e: "🦉", n: "Gufo" }, { e: "🦊", n: "Volpe" }, { e: "🐊", n: "Coccodrillo" }, { e: "🦬", n: "Bisonte" }];
+function pickN(arr, n) {
+  const pool = arr.slice(), out = [];
+  for (let i = 0; i < n; i++) { if (!pool.length) pool.push(...arr); out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]); }
+  return out;
+}
+function openArena() {
+  $("arenaBackdrop").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderArenaIntro();
+}
+function closeArena() { $("arenaBackdrop").hidden = true; document.body.style.overflow = ""; }
+function renderArenaIntro() {
+  const coll = loadCollection();
+  let html = `<button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
+    <div class="shop-head"><span class="shop-emoji">⚔️</span><h2>${t("arena_title")}</h2><p>${t("arena_intro")}</p></div>`;
+  if (!coll.length) {
+    html += `<p class="coll-empty">${t("arena_need")}</p>`;
+  } else {
+    html += `<div class="settings-body"><button class="btn btn-primary set-action" id="arenaStart" type="button">${t("arena_start")}</button></div>`;
+  }
+  $("arenaBody").innerHTML = html;
+  const cl = $("arenaClose2"); if (cl) cl.addEventListener("click", closeArena);
+  const st = $("arenaStart"); if (st) st.addEventListener("click", playMatch);
+}
+async function playMatch() {
+  const coll = loadCollection();
+  const mine = pickN(coll, 3).map((e) => ({ name: e.result.nome_comune, img: e.image, rar: e.result.rarita, ...animalStats(e.result) }));
+  const avg = mine.reduce((s, c) => s + c.atk + c.def, 0) / (mine.length * 2);
+  const cpu = pickN(WILD, 3).map((w) => {
+    const v = avg + (Math.random() * 30 - 15);
+    return { name: w.n, emoji: w.e, atk: clampN(Math.round(v + Math.random() * 16 - 8), 5, 99), def: clampN(Math.round(v + Math.random() * 16 - 8), 5, 99) };
+  });
+  let you = 0, opp = 0, rows = "";
+  for (let i = 0; i < 3; i++) {
+    const m = mine[i], c = cpu[i];
+    const ya = m.atk >= c.atk, oa = c.atk >= m.atk, yd = m.def >= c.def, od = c.def >= m.def;
+    if (ya) you++; if (oa) opp++; if (yd) you++; if (od) opp++;
+    rows += `
+      <div class="ar-round">
+        <div class="ar-rlabel">${t("arena_round", i + 1)}</div>
+        <div class="ar-vs">
+          <div class="ar-card" style="border-color:${rcOf(m.rar)}">
+            <img src="${esc(m.img)}" alt="" />
+            <div class="ar-nm">${esc(m.name)}</div>
+            <div class="ar-st">⚔️${m.atk}${ya ? "✅" : ""} 🛡️${m.def}${yd ? "✅" : ""}</div>
+          </div>
+          <div class="ar-mid">VS</div>
+          <div class="ar-card">
+            <div class="ar-emoji">${c.emoji}</div>
+            <div class="ar-nm">${esc(c.name)}</div>
+            <div class="ar-st">⚔️${c.atk}${oa ? "✅" : ""} 🛡️${c.def}${od ? "✅" : ""}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+  const won = you > opp, draw = you === opp;
+  let reward = "";
+  if (won) {
+    try {
+      const r = await fetch(`${API_BASE}/game/reward`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({}) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) { applyState(d); reward = `<div class="ar-reward">${t("arena_reward")}</div>`; }
+    } catch { /* niente premio se offline */ }
+  }
+  $("arenaBody").innerHTML = `
+    <button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
+    <div class="shop-head"><span class="shop-emoji">${won ? "🏆" : draw ? "🤝" : "😢"}</span>
+      <h2>${won ? t("arena_win") : draw ? t("arena_draw") : t("arena_lose")}</h2>
+      <p>${t("arena_points", you, opp)}</p></div>
+    ${reward}
+    <div class="ar-rounds">${rows}</div>
+    <div class="settings-body"><button class="btn btn-primary set-action" id="arenaAgain" type="button">${t("arena_again")}</button></div>`;
+  $("arenaClose2").addEventListener("click", closeArena);
+  $("arenaAgain").addEventListener("click", renderArenaIntro);
+}
+
 // ---- Eventi ----
 function init() {
   const dz = $("dropzone");
   const input = $("fileInput");
 
   input.addEventListener("change", (e) => { onFile(e.target.files[0]); e.target.value = ""; });
-  // 📷 Scatta = apre la fotocamera (capture). 🖼️ Galleria = scegli un file.
-  $("btnCamera").addEventListener("click", (e) => { e.preventDefault(); input.setAttribute("capture", "environment"); input.click(); });
+  // 📷 Scatta = fotocamera LIVE in-app. 🖼️ Galleria = scegli un file.
+  $("btnCamera").addEventListener("click", (e) => { e.preventDefault(); openCamera(); });
   $("btnGallery").addEventListener("click", (e) => { e.preventDefault(); input.removeAttribute("capture"); input.click(); });
   $("btnScan").addEventListener("click", () => (busyScanning ? cancelScan() : scan()));
+
+  // Fotocamera in-app
+  $("camClose").addEventListener("click", closeCamera);
+  $("camShot").addEventListener("click", shootCamera);
+  $("camBackdrop").addEventListener("click", (e) => { if (e.target === $("camBackdrop")) closeCamera(); });
+
+  // Arena
+  $("arenaBtn").addEventListener("click", openArena);
+  $("arenaClose").addEventListener("click", closeArena);
+  $("arenaBackdrop").addEventListener("click", (e) => { if (e.target === $("arenaBackdrop")) closeArena(); });
 
   // drag & drop (desktop)
   ["dragenter", "dragover"].forEach((ev) =>
@@ -665,7 +844,7 @@ function init() {
   $("collCloseBtn").addEventListener("click", closeCollection);
   $("collBackdrop").addEventListener("click", (e) => { if (e.target === $("collBackdrop")) closeCollection(); });
 
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeSheet(); closeShop(); closeCollection(); closeAd(); closeLeaderboard(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeSheet(); closeShop(); closeCollection(); closeAd(); closeLeaderboard(); closeCamera(); closeArena(); } });
 
   renderCoins();
   renderCollection();
