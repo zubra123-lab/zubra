@@ -294,6 +294,8 @@ function rateLimit(key, max, windowMs) {
   if (e.count >= max) return false;
   e.count += 1; return true;
 }
+// Azzera il contatore di una chiave (es. dopo un accesso riuscito).
+function rateLimitReset(key) { rlMap.delete(key); }
 function clientIp(req) {
   return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'ip';
 }
@@ -471,7 +473,8 @@ app.post('/auth/resend', async (req, res) => {
 
 // Login: solo contatto + password (nessun codice).
 app.post('/auth/login', (req, res) => {
-  if (!rateLimit('login:' + clientIp(req), 15, 5 * 60 * 1000)) {
+  const rlKey = 'login:' + clientIp(req);
+  if (!rateLimit(rlKey, 30, 5 * 60 * 1000)) {
     return res.status(429).json({ error: 'Troppi tentativi di accesso. Riprova tra qualche minuto.' });
   }
   const { contact, password } = req.body || {};
@@ -483,6 +486,8 @@ app.post('/auth/login', (req, res) => {
   if (!u.verified) {
     return res.status(403).json({ error: 'Account non verificato. Completa la registrazione.', needVerification: true, contact: u.contact, contactType: u.contactType });
   }
+  // Accesso riuscito: azzera il contatore anti-spam per questo IP.
+  rateLimitReset(rlKey);
   const token = newToken();
   sessions.set(token, u.contact); persistSessions();
   res.json({ ok: true, token, user: publicUser(u) });
@@ -537,6 +542,8 @@ app.post('/auth/reset', (req, res) => {
   u.pro = !!PRO_PASSWORD && String(newPassword) === PRO_PASSWORD;
   delete u.resetCode; delete u.resetExpires; delete u.resetTries;
   persistUsers();
+  // Reset riuscito: azzera l'anti-spam del login per questo IP.
+  rateLimitReset('login:' + clientIp(req));
   const token = newToken();
   sessions.set(token, u.contact); persistSessions();
   res.json({ ok: true, token, user: publicUser(u) });
