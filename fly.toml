@@ -1,0 +1,21 @@
+# Configurazione Fly.io per Zubra
+# NB: "app" deve essere un nome UNICO su Fly. Se "zubra-fun" è già preso,
+# cambialo (es. zubra-app, zubra-zoo, zubra-andrea) qui e in fly deploy.
+app = "zubra-fun"
+primary_region = "cdg"  # Parigi (vicino all'Italia)
+
+[build]
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # non spegnere: il sito resta sempre veloce
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

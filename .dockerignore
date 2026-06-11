@@ -1,0 +1,10 @@
+# Non includere nell'immagine: segreti, dipendenze locali, dati effimeri
+node_modules
+npm-debug.log
+.env
+.env.*
+data
+.git
+.gitignore
+*.md
+.claude
