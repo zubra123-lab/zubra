@@ -102,8 +102,6 @@ async function api(path, body, method = "POST", token) {
 
 function deliveryText(delivery, devCode) {
   if (delivery === "email") return t("dl_email");
-  if (delivery === "sms") return t("dl_sms");
-  if (devCode) return t("dl_code") + " 👉 " + devCode;
   return t("dl_generic");
 }
 
@@ -173,15 +171,13 @@ let pendingResetContact = null;
 async function doForgot(e) {
   if (e) e.preventDefault();
   const contact = _("fpContact").value.trim();
-  if (!contact) return authMsg("Inserisci la tua email o numero.", "error");
+  if (!contact) return authMsg("Inserisci la tua email.", "error");
   authMsg("Invio in corso…");
   const { ok, data } = await api("/auth/forgot", { contact });
   if (!ok) return authMsg(data.error || "Invio non riuscito.", "error");
   pendingResetContact = data.contact || contact;
   showForm("reset");
-  _("resetInfo").textContent = data.devCode
-    ? t("dl_code") + " 👉 " + data.devCode
-    : t("reset_sent");
+  _("resetInfo").textContent = t("reset_sent");
   _("rpCode").value = ""; _("rpPassword").value = "";
   _("rpCode").focus();
 }
@@ -204,7 +200,7 @@ async function doForgotResend() {
   authMsg("Rinvio codice…");
   const { ok, data } = await api("/auth/forgot", { contact: pendingResetContact });
   if (!ok) return authMsg(data.error || "Rinvio non riuscito.", "error");
-  _("resetInfo").textContent = data.devCode ? t("dl_code") + " 👉 " + data.devCode : t("reset_sent");
+  _("resetInfo").textContent = t("reset_sent");
   authMsg("");
 }
 

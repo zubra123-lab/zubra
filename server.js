@@ -26,13 +26,7 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 // ---- Invio codici di verifica (opzionale) ----
 // Email reali via Resend (https://resend.com) se imposti RESEND_API_KEY + MAIL_FROM.
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const MAIL_FROM = process.env.MAIL_FROM || 'Animal Scanner <onboarding@resend.dev>';
-// SMS reali via Twilio se imposti queste tre variabili.
-const TWILIO_SID = process.env.TWILIO_SID || '';
-const TWILIO_TOKEN = process.env.TWILIO_TOKEN || '';
-const TWILIO_FROM = process.env.TWILIO_FROM || '';
-// In modalità demo (nessun provider) il codice viene mostrato nell'app per provare.
-const AUTH_DEMO_MODE = !RESEND_API_KEY && !TWILIO_SID;
+const MAIL_FROM = process.env.MAIL_FROM || 'Zubra <onboarding@resend.dev>';
 
 // Password segreta PRO: chi si registra usando ESATTAMENTE questa password
 // ottiene scansioni illimitate e tutte le funzioni PRO.
@@ -201,15 +195,11 @@ function verifyPassword(password, salt, hash) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Riconosce e normalizza il contatto: email oppure numero di telefono.
+// Riconosce e normalizza il contatto: SOLO email (telefono/SMS rimosso).
 function classifyContact(raw) {
   const s = String(raw || '').trim();
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) {
     return { type: 'email', value: s.toLowerCase() };
-  }
-  const digits = s.replace(/[\s\-().]/g, '');
-  if (/^\+?\d{6,15}$/.test(digits)) {
-    return { type: 'phone', value: digits };
   }
   return null;
 }
@@ -221,7 +211,7 @@ function newToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
-// Invia il codice. Ritorna { delivery: 'email'|'sms'|'demo' }.
+// Invia il codice via email (Resend). Ritorna { delivery: 'email'|'failed' }.
 async function sendVerificationCode(contact, type, code) {
   try {
     if (type === 'email' && RESEND_API_KEY) {
@@ -240,25 +230,10 @@ async function sendVerificationCode(contact, type, code) {
       if (r.ok) return { delivery: 'email' };
       console.error('Resend errore', r.status, await r.text().catch(() => ''));
     }
-    if (type === 'phone' && TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM) {
-      const body = new URLSearchParams({ To: contact, From: TWILIO_FROM, Body: `Codice Zubra: ${code}` });
-      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body,
-      });
-      if (r.ok) return { delivery: 'sms' };
-      console.error('Twilio errore', r.status, await r.text().catch(() => ''));
-    }
   } catch (e) {
     console.error('Invio codice fallito', e);
   }
-  // Fallback demo: stampa il codice nel log del server.
-  console.log(`\n[CODICE VERIFICA] ${contact} -> ${code}\n`);
-  return { delivery: 'demo' };
+  return { delivery: 'failed' };
 }
 
 function publicUser(u) {
@@ -385,7 +360,7 @@ app.post('/auth/signup', async (req, res) => {
     return res.status(400).json({ error: 'Username tra 2 e 20 caratteri.' });
   }
   const c = classifyContact(contact);
-  if (!c) return res.status(400).json({ error: 'Inserisci una email valida o un numero di telefono.' });
+  if (!c) return res.status(400).json({ error: 'Inserisci un indirizzo email valido.' });
   if (String(password || '').length < 6) {
     return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri.' });
   }
@@ -413,15 +388,15 @@ app.post('/auth/signup', async (req, res) => {
   persistUsers();
 
   const { delivery } = await sendVerificationCode(c.value, c.type, code);
+  if (delivery !== 'email') {
+    return res.status(502).json({ error: 'Non siamo riusciti a inviare l\'email. Controlla l\'indirizzo e riprova.' });
+  }
   res.json({
     ok: true,
     needVerification: true,
     contact: c.value,
     contactType: c.type,
-    delivery,                                       // 'email' | 'sms' | 'demo'
-    // Se l'email/SMS NON è stato consegnato (demo o invio fallito), mostriamo
-    // il codice nell'app così la persona può comunque verificarsi.
-    devCode: delivery === 'demo' ? code : undefined,
+    delivery,
   });
 });
 
@@ -468,7 +443,8 @@ app.post('/auth/resend', async (req, res) => {
   u.codeTries = 0;
   persistUsers();
   const { delivery } = await sendVerificationCode(u.contact, u.contactType, u.code);
-  res.json({ ok: true, delivery, devCode: delivery === 'demo' ? u.code : undefined });
+  if (delivery !== 'email') return res.status(502).json({ error: 'Non siamo riusciti a inviare l\'email. Riprova tra poco.' });
+  res.json({ ok: true, delivery });
 });
 
 // Login: solo contatto + password (nessun codice).
@@ -512,7 +488,7 @@ app.post('/auth/forgot', async (req, res) => {
   u.resetTries = 0;
   persistUsers();
   const { delivery } = await sendVerificationCode(u.contact, u.contactType, u.resetCode);
-  res.json({ ok: true, contact: u.contact, delivery, devCode: delivery === 'demo' ? u.resetCode : undefined });
+  res.json({ ok: true, contact: u.contact, delivery });
 });
 
 // Reset password: codice + nuova password.

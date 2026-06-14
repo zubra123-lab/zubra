@@ -249,8 +249,8 @@
 
       <!-- LOGIN -->
       <form class="auth-form" id="formLogin">
-        <label class="field"><span data-i18n="f_contact">Email o numero</span>
-          <input id="loginContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <label class="field"><span data-i18n="f_contact">Email</span>
+          <input id="loginContact" type="email" autocomplete="email" data-i18n-ph="ph_contact" placeholder="nome@email.com" /></label>
         <label class="field"><span data-i18n="f_password">Password</span>
           <input id="loginPassword" type="password" autocomplete="current-password" data-i18n-ph="ph_password" placeholder="••••••" /></label>
         <button class="auth-btn" type="submit" data-i18n="login">Accedi</button>
@@ -259,9 +259,9 @@
 
       <!-- PASSWORD DIMENTICATA: invia codice -->
       <form class="auth-form" id="formForgot" hidden>
-        <p class="verify-info" id="forgotInfo" data-i18n="forgot_info">Inserisci la tua email o numero: ti mandiamo un codice per reimpostare la password.</p>
-        <label class="field"><span data-i18n="f_contact">Email o numero</span>
-          <input id="fpContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <p class="verify-info" id="forgotInfo" data-i18n="forgot_info">Inserisci la tua email: ti mandiamo un codice per reimpostare la password.</p>
+        <label class="field"><span data-i18n="f_contact">Email</span>
+          <input id="fpContact" type="email" autocomplete="email" data-i18n-ph="ph_contact" placeholder="nome@email.com" /></label>
         <button class="auth-btn" type="submit" data-i18n="forgot_send">Invia codice</button>
         <button class="auth-link" id="forgotBack" type="button" data-i18n="back">‹ Indietro</button>
       </form>
@@ -281,8 +281,8 @@
       <form class="auth-form" id="formSignup" hidden>
         <label class="field"><span data-i18n="f_username">Username</span>
           <input id="suUsername" type="text" autocomplete="nickname" data-i18n-ph="ph_username" placeholder="Il tuo nome da giocatore" /></label>
-        <label class="field"><span data-i18n="f_contact">Email o numero</span>
-          <input id="suContact" type="text" autocomplete="username" data-i18n-ph="ph_contact" placeholder="nome@email.com o +39 333..." /></label>
+        <label class="field"><span data-i18n="f_contact">Email</span>
+          <input id="suContact" type="email" autocomplete="email" data-i18n-ph="ph_contact" placeholder="nome@email.com" /></label>
         <label class="field"><span data-i18n="f_password">Password</span>
           <input id="suPassword" type="password" autocomplete="new-password" data-i18n-ph="ph_newpass" placeholder="almeno 6 caratteri" /></label>
         <button class="auth-btn" type="submit" data-i18n="create_account">Crea account</button>
