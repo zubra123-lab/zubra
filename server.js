@@ -848,7 +848,9 @@ app.post('/scan', async (req, res) => {
 
 // Avvia lo storage (DB se disponibile) e POI il server.
 initStore().finally(() => {
-  app.listen(PORT, () => {
+  // Ascolta SOLO su localhost: il traffico arriva via Caddy (reverse proxy).
+  // Così la porta dell'app non è esposta sull'interfaccia pubblica.
+  app.listen(PORT, '127.0.0.1', () => {
     console.log(`Zubra backend in ascolto su http://localhost:${PORT}`);
     const modelLabel = AI_PROVIDER === 'minimax' ? `MiniMax (${MINIMAX_MODEL})` : AI_PROVIDER === 'gemini' ? GEMINI_MODEL : 'NESSUNO (configura una chiave AI)';
     console.log(`Provider AI: ${AI_PROVIDER} · Modello: ${modelLabel} · Limite gratuito/giorno: ${DAILY_FREE_LIMIT}`);
