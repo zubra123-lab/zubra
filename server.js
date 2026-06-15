@@ -292,7 +292,10 @@ function rateLimit(key, max, windowMs) {
 // Azzera il contatore di una chiave (es. dopo un accesso riuscito).
 function rateLimitReset(key) { rlMap.delete(key); }
 function clientIp(req) {
-  return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'ip';
+  // Dietro Cloudflare usiamo cf-connecting-ip (impostato da Cloudflare, NON
+  // falsificabile dal client). x-forwarded-for sarebbe spoofabile → no rate-limit.
+  return String(req.headers['cf-connecting-ip'] || '').trim()
+    || req.socket?.remoteAddress || 'ip';
 }
 
 // Anti-scansioni concorrenti (una per utente alla volta → niente race sulla quota).
@@ -566,6 +569,10 @@ app.get('/leaderboard', (req, res) => {
 // Solo il creatore (chi conosce la password segreta PRO) può rimuovere
 // qualcuno dalla classifica. NON serve essere loggati come quell'utente.
 app.post('/admin/lb-remove', (req, res) => {
+  // Anti brute-force della password segreta: max 10 tentativi / 10 min per IP.
+  if (!rateLimit('admin:' + clientIp(req), 10, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi. Riprova tra qualche minuto.' });
+  }
   const { username, password } = req.body || {};
   if (!PRO_PASSWORD || String(password || '') !== PRO_PASSWORD) {
     return res.status(403).json({ error: 'Password segreta errata.' });
