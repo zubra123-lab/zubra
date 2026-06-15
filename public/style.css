@@ -563,17 +563,19 @@ main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding
 
 /* ===== Adattamento telefono: tutto entra in verticale, niente scroll laterale ===== */
 @media (max-width: 480px) {
-  .topbar { padding: 16px 12px 10px; gap: 8px; flex-wrap: wrap; }
-  .brand { gap: 9px; min-width: 0; flex: 1 1 auto; }
+  /* intestazione su DUE righe CENTRATE: logo sopra, badge centrati sotto */
+  .topbar { flex-direction: column; align-items: center; padding: 16px 12px 10px; gap: 10px; }
+  .brand { gap: 9px; min-width: 0; justify-content: center; }
   .brand-mark { width: 40px; height: 40px; font-size: 19px; }
-  .brand-text h1 { font-size: 18px; }
+  .brand-text { text-align: center; }
+  .brand-text h1 { font-size: 19px; }
   .brand-text p { display: none; }              /* sottotitolo nascosto per fare spazio */
-  .badges { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  .coins { padding: 6px 9px; }
-  .quota { padding: 6px 9px; min-width: 0; }
+  .badges { gap: 7px; flex-wrap: wrap; justify-content: center; }
+  .coins { padding: 6px 10px; }
+  .quota { padding: 6px 10px; min-width: 0; }
   .coins-num { font-size: 16px; }
   .quota-num { font-size: 17px; }
-  .pro-badge { padding: 6px 9px; font-size: 11.5px; }
+  .pro-badge { padding: 6px 10px; font-size: 11.5px; }
   .icon-btn { width: 36px; height: 36px; font-size: 16px; }
   main { padding-left: 12px; padding-right: 12px; }
 }
