@@ -118,14 +118,19 @@ function isProDevice(deviceId) {
   return false;
 }
 
-const PRO_UNLIMITED = 999999; // valore "praticamente illimitato" per i PRO
+const PRO_DAILY_LIMIT = Number(process.env.PRO_DAILY_LIMIT) || 1000; // scansioni/giorno per i PRO
+
+/** Limite giornaliero in base al piano: 1000 per i PRO, 10 (default) per gli altri. */
+function dailyLimitFor(deviceId) {
+  return isProDevice(deviceId) ? PRO_DAILY_LIMIT : DAILY_FREE_LIMIT;
+}
 
 /** Scansioni gratuite ancora disponibili oggi (esclude i bonus). */
 function freeLeftFor(deviceId) {
-  if (isProDevice(deviceId)) return PRO_UNLIMITED;
+  const lim = dailyLimitFor(deviceId);
   const e = usage[deviceId];
-  if (!e || e.date !== today()) return DAILY_FREE_LIMIT;
-  return Math.max(0, DAILY_FREE_LIMIT - e.count);
+  if (!e || e.date !== today()) return lim;
+  return Math.max(0, lim - e.count);
 }
 
 /** Scansioni bonus comprate col negozio (non scadono col giorno). */
@@ -154,7 +159,7 @@ function addBonus(deviceId, amount) {
 
 /** Consuma una scansione: prima le gratuite di oggi, poi i bonus. */
 function consume(deviceId) {
-  if (isProDevice(deviceId)) return true; // PRO: illimitato, non scala nulla
+  const lim = dailyLimitFor(deviceId); // 1000 per i PRO, 10 per gli altri
   const d = today();
   let e = usage[deviceId];
   if (!e) {
@@ -166,8 +171,8 @@ function consume(deviceId) {
     e.date = d;
     e.count = 0;
   }
-  if (e.count < DAILY_FREE_LIMIT) {
-    e.count += 1;        // usa una scansione gratuita
+  if (e.count < lim) {
+    e.count += 1;        // usa una scansione del limite giornaliero
     persistUsageSoon();
     return true;
   }
@@ -835,7 +840,9 @@ app.post('/scan', async (req, res) => {
     // (foto reale, non presa da internet). Le foto sospette non contano.
     if (result.e_animale && !result.foto_sospetta) {
       consume(uid);
-      addCoinsU(u, Number(result.valore_monete) || 0);
+      // I PRO guadagnano monete doppie.
+      const base = Number(result.valore_monete) || 0;
+      addCoinsU(u, base * (u.pro ? 2 : 1));
     }
     return res.json({ result, ...userState(u) });
   } catch (err) {

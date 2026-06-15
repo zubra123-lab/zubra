@@ -46,6 +46,15 @@ function applyState(d) {
   renderCoins();
   setQuotaDisplay();
   renderAvatar();
+  applyProUI();
+}
+
+// Applica gli effetti visivi del PRO: niente pubblicità (nasconde 📺) e stile dorato.
+function applyProUI() {
+  const pro = isPro();
+  document.body.classList.toggle("is-pro", pro);
+  const ad = $("adBtn");
+  if (ad) ad.hidden = pro;            // i PRO non vedono la pubblicità
 }
 function renderAvatar() {
   const img = document.getElementById("avatarImg");
