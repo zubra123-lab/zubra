@@ -24,9 +24,17 @@ const DAILY_FREE_LIMIT = Number(process.env.DAILY_FREE_LIMIT) || 10;
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 
 // ---- Invio codici di verifica (opzionale) ----
-// Email reali via Resend (https://resend.com) se imposti RESEND_API_KEY + MAIL_FROM.
+// Email reali via Brevo (preferito) o Resend. Imposta BREVO_API_KEY oppure
+// RESEND_API_KEY, più MAIL_FROM ("Nome <indirizzo@dominio>").
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || 'Zubra <onboarding@resend.dev>';
+// Estrae { name, email } da "Nome <indirizzo>" (o solo indirizzo).
+function parseSender(s) {
+  const m = String(s || '').match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) return { name: m[1] || 'Zubra', email: m[2].trim() };
+  return { name: 'Zubra', email: String(s || '').trim() };
+}
 
 // Password segreta PRO: chi si registra usando ESATTAMENTE questa password
 // ottiene scansioni illimitate e tutte le funzioni PRO.
@@ -211,21 +219,33 @@ function newToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
-// Invia il codice via email (Resend). Ritorna { delivery: 'email'|'failed' }.
+// Invia il codice via email (Brevo se impostato, altrimenti Resend).
+// Ritorna { delivery: 'email'|'failed' }.
 async function sendVerificationCode(contact, type, code) {
+  if (type !== 'email') return { delivery: 'failed' };
+  const html = `<p>Ciao!</p><p>Il tuo codice di verifica è:</p>
+                <p style="font-size:28px;font-weight:bold;letter-spacing:4px">${code}</p>
+                <p>Scade tra 10 minuti.</p>`;
   try {
-    if (type === 'email' && RESEND_API_KEY) {
+    if (BREVO_API_KEY) {
+      const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'accept': 'application/json' },
+        body: JSON.stringify({
+          sender: parseSender(MAIL_FROM),
+          to: [{ email: contact }],
+          subject: 'Il tuo codice Zubra',
+          htmlContent: html,
+        }),
+      });
+      if (r.ok) return { delivery: 'email' };
+      console.error('Brevo errore', r.status, await r.text().catch(() => ''));
+    }
+    if (RESEND_API_KEY) {
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: MAIL_FROM,
-          to: contact,
-          subject: 'Il tuo codice Zubra',
-          html: `<p>Ciao!</p><p>Il tuo codice di verifica è:</p>
-                 <p style="font-size:28px;font-weight:bold;letter-spacing:4px">${code}</p>
-                 <p>Scade tra 10 minuti.</p>`,
-        }),
+        body: JSON.stringify({ from: MAIL_FROM, to: contact, subject: 'Il tuo codice Zubra', html }),
       });
       if (r.ok) return { delivery: 'email' };
       console.error('Resend errore', r.status, await r.text().catch(() => ''));
