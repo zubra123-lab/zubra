@@ -52,9 +52,9 @@ body {
   mix-blend-mode: overlay;
 }
 
-/* padding-bottom ampio: lascia spazio alla .tabbar fissa (~84px) così il
-   pulsante "Scansiona" non finisce sotto i tondi Arena/Classifica/ecc. */
-main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 0 18px 120px; }
+/* padding-bottom = circa l'altezza della .tabbar fissa: lascia spazio ai
+   tondi in fondo SENZA creare scroll vuoto extra. */
+main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 0 18px 92px; }
 
 /* ============ Topbar ============ */
 .topbar {
@@ -105,11 +105,12 @@ main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding
     radial-gradient(80% 60% at 50% 0%, rgba(111,212,154,0.06), transparent 70%),
     var(--panel);
   backdrop-filter: blur(10px);
-  aspect-ratio: 4 / 3; overflow: hidden;
-  /* su schermi bassi (es. desktop) limita l'altezza così il pulsante
-     "Scansiona" non finisce sotto la tabbar fissa. Su telefono il 4/3
-     resta perche piu piccolo del tetto. */
-  max-height: 52dvh;
+  overflow: hidden;
+  /* Larghezza SEMPRE piena (riga Scatta–Galleria) + altezza responsiva e
+     contenuta (niente aspect-ratio: con max-height faceva restringere anche
+     la larghezza). Si adatta agli schermi bassi senza coprire "Scansiona". */
+  width: 100%;
+  height: clamp(220px, 40vh, 400px);
   transition: border-color .25s, box-shadow .25s, transform .25s;
 }
 .dropzone:focus-visible { outline: none; border-color: var(--accent-2); }
