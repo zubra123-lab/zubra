@@ -52,7 +52,9 @@ body {
   mix-blend-mode: overlay;
 }
 
-main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 0 18px 40px; }
+/* padding-bottom ampio: lascia spazio alla .tabbar fissa (~84px) così il
+   pulsante "Scansiona" non finisce sotto i tondi Arena/Classifica/ecc. */
+main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 0 18px 120px; }
 
 /* ============ Topbar ============ */
 .topbar {
