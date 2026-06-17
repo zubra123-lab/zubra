@@ -741,20 +741,35 @@ function renderArenaIntro() {
   if (!coll.length) {
     html += `<p class="coll-empty">${t("arena_need")}</p>`;
   } else {
+    html += `<p class="arena-power">${esc(t("arena_power", coll.length, collectionBonus(coll.length)))}</p>`;
     html += `<div class="settings-body"><button class="btn btn-primary set-action" id="arenaStart" type="button">${t("arena_start")}</button></div>`;
   }
   $("arenaBody").innerHTML = html;
   const cl = $("arenaClose2"); if (cl) cl.addEventListener("click", closeArena);
   const st = $("arenaStart"); if (st) st.addEventListener("click", playMatch);
 }
+// Bonus collezione: piu animali hai catturato, piu forte e la tua squadra
+// (+1 ogni 2 animali, fino a +20).
+function collectionBonus(n) { return Math.min(20, Math.floor(n / 2)); }
 async function playMatch() {
   const coll = loadCollection();
-  const mine = pickN(coll, 3).map((e) => ({ name: e.result.nome_comune, img: e.image, rar: e.result.rarita, ...animalStats(e.result) }));
-  const avg = mine.reduce((s, c) => s + c.atk + c.def, 0) / (mine.length * 2);
-  const cpu = pickN(WILD, 3).map((w) => {
-    const v = avg + (Math.random() * 30 - 15);
-    return { name: w.n, emoji: w.e, atk: clampN(Math.round(v + Math.random() * 16 - 8), 5, 99), def: clampN(Math.round(v + Math.random() * 16 - 8), 5, 99) };
-  });
+  const bonus = collectionBonus(coll.length);
+  // Tutte le carte con stat + bonus collezione, ordinate dalla piu forte.
+  const all = coll.map((e) => {
+    const s = animalStats(e.result);
+    return { name: e.result.nome_comune, img: e.image, rar: e.result.rarita,
+             atk: clampN(s.atk + bonus, 5, 99), def: clampN(s.def + bonus, 5, 99) };
+  }).sort((a, b) => (b.atk + b.def) - (a.atk + a.def));
+  // I tuoi 3 CAMPIONI (i piu forti). Se ne hai meno di 3, ripeti i migliori.
+  const mine = [];
+  for (let i = 0; i < 3; i++) mine.push(all[i % all.length]);
+  // CPU: sfida a difficolta FISSA e moderata (NON insegue la tua forza),
+  // cosi piu i tuoi animali sono forti/numerosi, piu vinci.
+  const cpu = pickN(WILD, 3).map((w) => ({
+    name: w.n, emoji: w.e,
+    atk: clampN(38 + Math.round(Math.random() * 20 - 5), 5, 99),
+    def: clampN(38 + Math.round(Math.random() * 20 - 5), 5, 99),
+  }));
   let you = 0, opp = 0, rows = "";
   for (let i = 0; i < 3; i++) {
     const m = mine[i], c = cpu[i];
