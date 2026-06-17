@@ -763,12 +763,13 @@ async function playMatch() {
   // I tuoi 3 CAMPIONI (i piu forti). Se ne hai meno di 3, ripeti i migliori.
   const mine = [];
   for (let i = 0; i < 3; i++) mine.push(all[i % all.length]);
-  // CPU: sfida a difficolta FISSA e moderata (NON insegue la tua forza),
-  // cosi piu i tuoi animali sono forti/numerosi, piu vinci.
-  const cpu = pickN(WILD, 3).map((w) => ({
+  // CPU "decisa dal gioco": tarata sul livello dei TUOI animali con
+  // oscillazione ±16. Risultato calibrato (simulato): vinci ~35%, la CPU
+  // tiene il campo ~65% (vittoria o pareggio) → la macchina è sempre tosta.
+  const cpu = pickN(WILD, 3).map((w, i) => ({
     name: w.n, emoji: w.e,
-    atk: clampN(38 + Math.round(Math.random() * 20 - 5), 5, 99),
-    def: clampN(38 + Math.round(Math.random() * 20 - 5), 5, 99),
+    atk: clampN(Math.round(mine[i].atk + (Math.random() * 32 - 16)), 5, 99),
+    def: clampN(Math.round(mine[i].def + (Math.random() * 32 - 16)), 5, 99),
   }));
   let you = 0, opp = 0, rows = "";
   for (let i = 0; i < 3; i++) {
