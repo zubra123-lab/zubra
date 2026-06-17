@@ -545,6 +545,9 @@ app.post('/auth/reset', (req, res) => {
   // La nuova password può anche attivare/disattivare il PRO.
   u.pro = !!PRO_PASSWORD && String(newPassword) === PRO_PASSWORD;
   delete u.resetCode; delete u.resetExpires; delete u.resetTries;
+  // Sicurezza: invalida TUTTE le sessioni esistenti di questo account
+  // (se un token era stato rubato, dopo il reset non vale più).
+  for (const [tk, ct] of sessions) { if (ct === u.contact) sessions.delete(tk); }
   persistUsers();
   // Reset riuscito: azzera l'anti-spam del login per questo IP.
   rateLimitReset('login:' + clientIp(req));
@@ -805,9 +808,13 @@ app.post('/scan', async (req, res) => {
   if (!u) return res.status(401).json({ error: 'Non autenticato.' });
 
   const { imageBase64, mimeType } = req.body || {};
-  if (!imageBase64 || typeof imageBase64 !== 'string') {
-    return res.status(400).json({ error: 'Immagine mancante.' });
+  if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.length < 100
+      || !/^[A-Za-z0-9+/=\s]+$/.test(imageBase64)) {
+    return res.status(400).json({ error: 'Immagine mancante o non valida.' });
   }
+  // mimeType validato con whitelist (finisce in una data-URL → niente iniezioni).
+  const safeMime = (typeof mimeType === 'string' && /^image\/(jpeg|png|webp)$/.test(mimeType))
+    ? mimeType : 'image/jpeg';
   if (AI_PROVIDER === 'none') {
     return res.status(500).json({ error: 'Server non configurato (manca la chiave AI).' });
   }
@@ -830,8 +837,8 @@ app.post('/scan', async (req, res) => {
     let result;
     try {
       result = AI_PROVIDER === 'minimax'
-        ? await recognizeWithMiniMax(imageBase64, mimeType)
-        : await recognizeWithGemini(imageBase64, mimeType);
+        ? await recognizeWithMiniMax(imageBase64, safeMime)
+        : await recognizeWithGemini(imageBase64, safeMime);
     } catch (e) {
       return res.status(502).json({ error: e?.userMessage || 'Errore del servizio AI. Riprova.' });
     }
@@ -840,8 +847,8 @@ app.post('/scan', async (req, res) => {
     // (foto reale, non presa da internet). Le foto sospette non contano.
     if (result.e_animale && !result.foto_sospetta) {
       consume(uid);
-      // I PRO guadagnano monete doppie.
-      const base = Number(result.valore_monete) || 0;
+      // monete dall'AI: clamp 0..250000 (anti-gonfiaggio), poi x2 per i PRO.
+      const base = Math.max(0, Math.min(250000, Math.round(Number(result.valore_monete) || 0)));
       addCoinsU(u, base * (u.pro ? 2 : 1));
     }
     return res.json({ result, ...userState(u) });

@@ -251,6 +251,8 @@ async function scan() {
     if (busyScanning) setStatus(t("scan_progress", Math.floor((Date.now() - scanStart) / 1000)));
   }, 1000);
   scanAbort = new AbortController();
+  // Timeout automatico: se l'AI non risponde entro ~100s, annulla (niente blocco infinito).
+  const scanTimeout = setTimeout(() => { try { scanAbort.abort(); } catch { /* ignore */ } }, 100000);
   try {
     const r = await fetch(`${API_BASE}/scan`, {
       method: "POST",
@@ -288,6 +290,7 @@ async function scan() {
     if (e && e.name === "AbortError") setStatus(t("scan_cancelled"));
     else setStatus("Connessione al server fallita. Riprova.", "error");
   } finally {
+    clearTimeout(scanTimeout);
     busyScanning = false;
     clearInterval(scanTimer);
     setBusy(false);
@@ -375,7 +378,7 @@ function infoCard(icon, label, text, cls) {
   if (!text) return "";
   return `
     <div class="info-card ${cls || ""}">
-      <div class="i-head"><span class="i-ico">${icon}</span><span class="i-lbl">${label}</span></div>
+      <div class="i-head"><span class="i-ico">${icon}</span><span class="i-lbl">${esc(label)}</span></div>
       <div class="i-txt">${esc(text)}</div>
     </div>`;
 }
@@ -463,14 +466,14 @@ function closeSheet() {
 }
 
 // euristiche per colorare "prendibile"/"vendibile"
-function prendibileClass(t) {
-  const s = (t || "").toLowerCase();
+function prendibileClass(val) {
+  const s = (val || "").toLowerCase();
   if (/^s[iì]\b|domestic|consentit|legal/.test(s)) return "good";
   if (/\bno\b|vietat|protett|illegal|sconsigli/.test(s)) return "bad";
   return "";
 }
-function vendibileClass(t) {
-  const s = (t || "").toLowerCase();
+function vendibileClass(val) {
+  const s = (val || "").toLowerCase();
   if (/^s[iì]\b|consentit|autorizzat|legal/.test(s)) return "good";
   if (/\bno\b|vietat|protett|illegal|cites/.test(s)) return "bad";
   return "";

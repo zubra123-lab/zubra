@@ -522,7 +522,8 @@ function setLang(lang) {
 // Traduzione: t("key") oppure t("key", arg) per le voci-funzione.
 function t(key, ...args) {
   const dict = I18N[getLang()] || I18N.it;
-  const v = (key in dict) ? dict[key] : (I18N.it[key] ?? key);
+  // fallback: lingua scelta → inglese → italiano → la chiave stessa
+  const v = (key in dict) ? dict[key] : (I18N.en[key] ?? I18N.it[key] ?? key);
   return typeof v === "function" ? v(...args) : v;
 }
 
