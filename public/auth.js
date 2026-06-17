@@ -56,7 +56,7 @@ function onLoggedIn(user) {
   _("proBadge").hidden = !user.pro;     // distintivo PRO
   hideAuth();
   // applica subito monete/PRO dall'utente loggato, poi aggiorna dal server
-  if (typeof applyState === "function") applyState({ coins: user.coins, pro: user.pro });
+  if (typeof applyState === "function") applyState({ coins: user.coins, pro: user.pro, avatar: user.avatar });
   if (typeof renderCollection === "function") renderCollection();
   if (typeof refreshState === "function") refreshState();
 }

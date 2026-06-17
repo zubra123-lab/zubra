@@ -63,9 +63,29 @@ function renderAvatar() {
   else { img.hidden = true; img.src = ""; }
 }
 // Imposta la foto profilo da un'immagine di un animale catturato.
+// Riduce l'avatar (max 256px, qualità calante) per stare sotto il limite server (~100KB).
+function shrinkAvatar(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve(dataUrl);
+    img.onload = () => {
+      const max = 256;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      let q = 0.8, out = c.toDataURL("image/jpeg", q);
+      while (out.length > 95 * 1024 && q > 0.3) { q -= 0.15; out = c.toDataURL("image/jpeg", q); }
+      resolve(out);
+    };
+    img.src = dataUrl;
+  });
+}
 async function setAvatar(image) {
   try {
-    const r = await fetch(`${API_BASE}/me/avatar`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({ image }) });
+    const small = await shrinkAvatar(image);
+    const r = await fetch(`${API_BASE}/me/avatar`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({ image: small }) });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.ok) { serverState.avatar = d.avatar; renderAvatar(); alert(t("avatar_done")); }
     else alert(d.error || "Errore");
@@ -172,7 +192,8 @@ function renderCoins() {
 function isPro() { return !!serverState.pro || (() => { const s = session(); return !!(s && s.user && s.user.pro); })(); }
 function setQuotaDisplay(remaining) {
   const r = (remaining !== undefined && remaining !== null) ? remaining : serverState.remaining;
-  const val = isPro() ? "∞" : r;
+  // Mostra sempre il numero reale (i PRO hanno 1000/giorno, non infinito).
+  const val = r;
   if (val === undefined || val === null) return;
   const q = $("quotaNum"); if (q) q.textContent = val;
   const s = $("shopScans"); if (s) s.textContent = val;
