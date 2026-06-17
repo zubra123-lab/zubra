@@ -389,6 +389,9 @@ app.post('/auth/signup', async (req, res) => {
   }
   const c = classifyContact(contact);
   if (!c) return res.status(400).json({ error: 'Inserisci un indirizzo email valido.' });
+  // Username univoco (case-insensitive) tranne il proprio: evita impersonazioni in classifica.
+  const dupeName = Object.values(users).some((x) => x.contact !== c.value && (x.username || '').toLowerCase() === uname.toLowerCase());
+  if (dupeName) return res.status(409).json({ error: 'Username già in uso. Scegline un altro.' });
   if (String(password || '').length < 6) {
     return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri.' });
   }
@@ -430,6 +433,9 @@ app.post('/auth/signup', async (req, res) => {
 
 // Verifica del codice (solo durante la registrazione).
 app.post('/auth/verify', (req, res) => {
+  if (!rateLimit('verify:' + clientIp(req), 20, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi. Riprova tra qualche minuto.' });
+  }
   const { contact, code } = req.body || {};
   const c = classifyContact(contact);
   const u = c && users[c.value];
@@ -521,6 +527,9 @@ app.post('/auth/forgot', async (req, res) => {
 
 // Reset password: codice + nuova password.
 app.post('/auth/reset', (req, res) => {
+  if (!rateLimit('reset:' + clientIp(req), 20, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Troppi tentativi. Riprova tra qualche minuto.' });
+  }
   const { contact, code, newPassword } = req.body || {};
   const c = classifyContact(contact);
   const u = c && users[c.value];
@@ -598,11 +607,17 @@ app.post('/me/avatar', (req, res) => {
   const u = authUser(req);
   if (!u) return res.status(401).json({ error: 'Non autenticato.' });
   const img = String((req.body || {}).image || '');
-  if (img && !/^data:image\/(jpeg|png|webp);base64,/.test(img)) {
-    return res.status(400).json({ error: 'Immagine non valida.' });
-  }
-  if (img.length > 400 * 1024) return res.status(400).json({ error: 'Immagine troppo grande.' });
-  u.avatar = img; // stringa vuota = rimuove
+  if (img === '') { u.avatar = ''; persistUsers(); return res.json({ ok: true, avatar: '' }); } // rimuove
+  if (img.length > 100 * 1024) return res.status(400).json({ error: 'Immagine troppo grande.' });
+  const m = /^data:image\/(jpeg|png|webp);base64,(.+)$/.exec(img);
+  if (!m) return res.status(400).json({ error: 'Immagine non valida.' });
+  // Verifica i MAGIC BYTES reali (non solo il prefisso data-url): niente payload finti.
+  let head; try { head = Buffer.from(m[2].slice(0, 24), 'base64'); } catch { head = Buffer.alloc(0); }
+  const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+  const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47;
+  const isWebp = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
+  if (!isJpeg && !isPng && !isWebp) return res.status(400).json({ error: 'Immagine non valida.' });
+  u.avatar = img;
   persistUsers();
   res.json({ ok: true, avatar: u.avatar });
 });
@@ -843,10 +858,11 @@ app.post('/scan', async (req, res) => {
       return res.status(502).json({ error: e?.userMessage || 'Errore del servizio AI. Riprova.' });
     }
 
-    // Consuma una scansione e accredita le monete solo se è un animale VERO
-    // (foto reale, non presa da internet). Le foto sospette non contano.
+    // Ogni scansione andata a buon fine (AI ha risposto) consuma 1 quota:
+    // così non si può sprecare all'infinito la quota AI con foto a caso.
+    consume(uid);
+    // Le monete invece solo se è un animale VERO e la foto non è sospetta.
     if (result.e_animale && !result.foto_sospetta) {
-      consume(uid);
       // monete dall'AI: clamp 0..250000 (anti-gonfiaggio), poi x2 per i PRO.
       const base = Math.max(0, Math.min(250000, Math.round(Number(result.valore_monete) || 0)));
       addCoinsU(u, base * (u.pro ? 2 : 1));
@@ -858,6 +874,19 @@ app.post('/scan', async (req, res) => {
   } finally {
     scanning.delete(uid);
   }
+});
+
+// Gestore errori finale: risponde SEMPRE in JSON pulito (niente stack/HTML di
+// Express esposto). Cattura anche il JSON malformato del body parser.
+app.use((err, req, res, _next) => {
+  if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
+    return res.status(400).json({ error: 'Richiesta non valida (JSON malformato).' });
+  }
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Richiesta troppo grande.' });
+  }
+  console.error('Errore non gestito:', err && err.message);
+  return res.status(500).json({ error: 'Errore interno del server.' });
 });
 
 // Avvia lo storage (DB se disponibile) e POI il server.
