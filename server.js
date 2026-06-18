@@ -59,18 +59,21 @@ fs.mkdirSync(dataDir, { recursive: true });
 const DATABASE_URL = process.env.DATABASE_URL || '';
 let pgPool = null, dbReady = false;
 const _saveTimers = {};
+const _savePending = {};                    // ultimo valore da scrivere per chiave
 function _fileFor(k) { return path.join(dataDir, k + '.json'); }
 function saveKV(k, value) {
+  _savePending[k] = value;                  // tiene SEMPRE l'ultimo valore (no snapshot stantii)
   if (_saveTimers[k]) return;               // debounce per chiave (max 1 scrittura/0.8s)
   _saveTimers[k] = setTimeout(async () => {
     _saveTimers[k] = null;
+    const v = _savePending[k];              // scrive l'ultimo valore aggiornato
     if (dbReady) {
       try {
-        await pgPool.query('INSERT INTO kv(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=$2', [k, JSON.stringify(value)]);
+        await pgPool.query('INSERT INTO kv(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=$2', [k, JSON.stringify(v)]);
         return;
       } catch (e) { console.error('DB save ' + k + ' fallita, uso file:', e.message); }
     }
-    fs.writeFile(_fileFor(k), JSON.stringify(value), () => {});
+    fs.writeFile(_fileFor(k), JSON.stringify(v), () => {});
   }, 800);
 }
 async function initStore() {
