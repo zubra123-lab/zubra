@@ -749,73 +749,119 @@ function pickN(arr, n) {
   for (let i = 0; i < n; i++) { if (!pool.length) pool.push(...arr); out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]); }
   return out;
 }
+let arenaState = null;
+const ARENA_NOISE = 16; // oscillazione CPU attorno alla tua carta -> ~35% vittorie (calibrato)
+
 function openArena() {
   $("arenaBackdrop").hidden = false;
   document.body.style.overflow = "hidden";
   renderArenaIntro();
 }
-function closeArena() { $("arenaBackdrop").hidden = true; document.body.style.overflow = ""; }
+function closeArena() { arenaState = null; $("arenaBackdrop").hidden = true; document.body.style.overflow = ""; }
+
 function renderArenaIntro() {
+  arenaState = null;
   const coll = loadCollection();
   let html = `<button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
     <div class="shop-head"><span class="shop-emoji">⚔️</span><h2>${t("arena_title")}</h2><p>${t("arena_intro")}</p></div>`;
   if (!coll.length) {
     html += `<p class="coll-empty">${t("arena_need")}</p>`;
   } else {
-    html += `<p class="arena-power">${esc(t("arena_power", coll.length, collectionBonus(coll.length)))}</p>`;
     html += `<div class="settings-body"><button class="btn btn-primary set-action" id="arenaStart" type="button">${t("arena_start")}</button></div>`;
   }
   $("arenaBody").innerHTML = html;
   const cl = $("arenaClose2"); if (cl) cl.addEventListener("click", closeArena);
-  const st = $("arenaStart"); if (st) st.addEventListener("click", playMatch);
+  const st = $("arenaStart"); if (st) st.addEventListener("click", arenaStart);
 }
-// Bonus collezione: piu animali hai catturato, piu forte e la tua squadra
-// (+1 ogni 2 animali, fino a +20).
-function collectionBonus(n) { return Math.min(20, Math.floor(n / 2)); }
-async function playMatch() {
-  const coll = loadCollection();
-  const bonus = collectionBonus(coll.length);
-  // Tutte le carte con stat + bonus collezione, ordinate dalla piu forte.
-  const all = coll.map((e) => {
-    const s = animalStats(e.result);
-    return { name: e.result.nome_comune, img: e.image, rar: e.result.rarita,
-             atk: clampN(s.atk + bonus, 5, 99), def: clampN(s.def + bonus, 5, 99) };
-  }).sort((a, b) => (b.atk + b.def) - (a.atk + a.def));
-  // I tuoi 3 CAMPIONI (i piu forti). Se ne hai meno di 3, ripeti i migliori.
-  const mine = [];
-  for (let i = 0; i < 3; i++) mine.push(all[i % all.length]);
-  // CPU "decisa dal gioco": tarata sul livello dei TUOI animali con
-  // oscillazione ±16. Risultato calibrato (simulato): vinci ~35%, la CPU
-  // tiene il campo ~65% (vittoria o pareggio) → la macchina è sempre tosta.
-  const cpu = pickN(WILD, 3).map((w, i) => ({
-    name: w.n, emoji: w.e,
-    atk: clampN(Math.round(mine[i].atk + (Math.random() * 32 - 16)), 5, 99),
-    def: clampN(Math.round(mine[i].def + (Math.random() * 32 - 16)), 5, 99),
-  }));
-  let you = 0, opp = 0, rows = "";
-  for (let i = 0; i < 3; i++) {
-    const m = mine[i], c = cpu[i];
-    const ya = m.atk >= c.atk, oa = c.atk >= m.atk, yd = m.def >= c.def, od = c.def >= m.def;
-    if (ya) you++; if (oa) opp++; if (yd) you++; if (od) opp++;
-    rows += `
-      <div class="ar-round">
-        <div class="ar-rlabel">${t("arena_round", i + 1)}</div>
-        <div class="ar-vs">
-          <div class="ar-card" style="border-color:${rcOf(m.rar)}">
-            <img src="${esc(m.img)}" alt="" />
-            <div class="ar-nm">${esc(m.name)}</div>
-            <div class="ar-st">⚔️${m.atk}${ya ? "✅" : ""} 🛡️${m.def}${yd ? "✅" : ""}</div>
-          </div>
-          <div class="ar-mid">VS</div>
-          <div class="ar-card">
-            <div class="ar-emoji">${c.emoji}</div>
-            <div class="ar-nm">${esc(c.name)}</div>
-            <div class="ar-st">⚔️${c.atk}${oa ? "✅" : ""} 🛡️${c.def}${od ? "✅" : ""}</div>
-          </div>
-        </div>
-      </div>`;
+
+// Avvio partita: prima controlla il limite giornaliero (nascosto) lato server.
+async function arenaStart() {
+  const btn = $("arenaStart"); if (btn) btn.disabled = true;
+  let allowed = false, msg = "";
+  try {
+    const r = await fetch(`${API_BASE}/game/play`, { method: "POST", headers: authHeaders(true), body: JSON.stringify({}) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) allowed = true; else msg = d.error || t("arena_limit");
+  } catch { msg = "Connessione al server fallita. Riprova."; }
+  if (!allowed) {
+    $("arenaBody").innerHTML = `<button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
+      <div class="shop-head"><span class="shop-emoji">🌙</span><h2>${t("arena_title")}</h2><p>${esc(msg)}</p></div>
+      <div class="settings-body"><button class="btn btn-primary set-action" id="arenaOk" type="button">Ok</button></div>`;
+    $("arenaClose2").addEventListener("click", closeArena);
+    $("arenaOk").addEventListener("click", closeArena);
+    return;
   }
-  const won = you > opp, draw = you === opp;
+  arenaBegin();
+}
+
+// Il GIOCO sceglie 3 carte a caso dalla collezione (non le piu forti).
+function arenaBegin() {
+  const coll = loadCollection();
+  const mine = pickN(coll, 3).map((e) => {
+    const s = animalStats(e.result);
+    return { name: e.result.nome_comune, img: e.image, rar: e.result.rarita, atk: s.atk, def: s.def, played: false };
+  });
+  arenaState = { mine, round: 0, you: 0, opp: 0, log: [], busy: false };
+  renderArenaBoard();
+}
+
+function arenaRoundHtml(L) {
+  return `<div class="ar-round"><div class="ar-vs">
+      <div class="ar-card" style="border-color:${rcOf(L.me.rar)}"><img src="${esc(L.me.img)}" alt=""/><div class="ar-nm">${esc(L.me.name)}</div><div class="ar-st">⚔️${L.me.atk}${L.ya ? "✅" : ""} 🛡️${L.me.def}${L.yd ? "✅" : ""}</div></div>
+      <div class="ar-mid">VS</div>
+      <div class="ar-card"><div class="ar-emoji">${L.cpu.emoji}</div><div class="ar-nm">${esc(L.cpu.name)}</div><div class="ar-st">⚔️${L.cpu.atk}${L.oa ? "✅" : ""} 🛡️${L.cpu.def}${L.od ? "✅" : ""}</div></div>
+    </div></div>`;
+}
+
+function renderArenaBoard() {
+  const st = arenaState; if (!st) return;
+  const logHtml = st.log.map(arenaRoundHtml).join("");
+  const handHtml = st.mine.map((m, i) => m.played ? "" : `
+    <button class="ar-hand-card" data-i="${i}" style="border-color:${rcOf(m.rar)}" ${st.busy ? "disabled" : ""}>
+      <img src="${esc(m.img)}" alt="" />
+      <div class="ar-nm">${esc(m.name)}</div>
+      <div class="ar-st">⚔️${m.atk} 🛡️${m.def}</div>
+    </button>`).join("");
+  $("arenaBody").innerHTML = `
+    <button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
+    <div class="shop-head"><span class="shop-emoji">⚔️</span><h2>Round ${Math.min(st.round + 1, 3)}/3</h2>
+      <p>${st.busy ? t("arena_thinking") : t("arena_pick")}</p>
+      <div class="ar-score">${esc(t("arena_score", st.you, st.opp))}</div></div>
+    <div class="ar-rounds">${logHtml}</div>
+    <div class="ar-hand">${handHtml}</div>`;
+  $("arenaClose2").addEventListener("click", closeArena);
+  if (!st.busy) {
+    document.querySelectorAll(".ar-hand-card").forEach((b) => b.addEventListener("click", () => playArenaCard(+b.dataset.i)));
+  }
+}
+
+// Il giocatore cala una carta; la CPU reagisce (carta tarata ±ARENA_NOISE).
+function playArenaCard(idx) {
+  const st = arenaState; if (!st || st.busy) return;
+  const m = st.mine[idx]; if (!m || m.played) return;
+  st.busy = true; m.played = true;
+  const w = WILD[Math.floor(Math.random() * WILD.length)];
+  const cpu = {
+    emoji: w.e, name: w.n,
+    atk: clampN(Math.round(m.atk + (Math.random() * 2 - 1) * ARENA_NOISE), 5, 99),
+    def: clampN(Math.round(m.def + (Math.random() * 2 - 1) * ARENA_NOISE), 5, 99),
+  };
+  const ya = m.atk >= cpu.atk, oa = cpu.atk >= m.atk, yd = m.def >= cpu.def, od = cpu.def >= m.def;
+  renderArenaBoard(); // mostra "la macchina cala la carta..."
+  setTimeout(() => {
+    if (ya) st.you++; if (oa) st.opp++; if (yd) st.you++; if (od) st.opp++;
+    st.log.push({ me: m, cpu, ya, oa, yd, od });
+    st.round++;
+    st.busy = false;
+    if (st.round >= 3) finishArena();
+    else renderArenaBoard();
+  }, 1400);
+}
+
+async function finishArena() {
+  const st = arenaState; if (!st) return;
+  const won = st.you > st.opp, draw = st.you === st.opp;
+  const rows = st.log.map(arenaRoundHtml).join("");
   let reward = "";
   if (won) {
     try {
@@ -828,7 +874,7 @@ async function playMatch() {
     <button class="sheet-close" id="arenaClose2" aria-label="Chiudi">✕</button>
     <div class="shop-head"><span class="shop-emoji">${won ? "🏆" : draw ? "🤝" : "😢"}</span>
       <h2>${won ? t("arena_win") : draw ? t("arena_draw") : t("arena_lose")}</h2>
-      <p>${t("arena_points", you, opp)}</p></div>
+      <p>${esc(t("arena_points", st.you, st.opp))}</p></div>
     ${reward}
     <div class="ar-rounds">${rows}</div>
     <div class="settings-body"><button class="btn btn-primary set-action" id="arenaAgain" type="button">${t("arena_again")}</button></div>`;

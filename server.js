@@ -304,7 +304,7 @@ function addCoinsU(u, n) { u.coins = Math.max(0, (u.coins || 0) + Math.round(Num
 function spendCoinsU(u, n) { if ((u.coins || 0) < n) return false; u.coins -= n; persistUsers(); return true; }
 
 // Pacchetti negozio: prezzi DECISI dal server (il client non può barare).
-const SHOP_PACKS = { p1: { scans: 1, price: 60 }, p3: { scans: 3, price: 150 }, p10: { scans: 10, price: 400 }, p25: { scans: 25, price: 850 } };
+const SHOP_PACKS = { p1: { scans: 1, price: 80 }, p3: { scans: 3, price: 200 }, p10: { scans: 10, price: 550 }, p25: { scans: 25, price: 1150 } };
 
 // Pubblicità premio: cooldown + limite giornaliero.
 const AD_COOLDOWN_MS = 30 * 1000;
@@ -653,16 +653,34 @@ app.post('/me/avatar', (req, res) => {
 });
 
 // Premio per una partita vinta all'Arena (con cap giornaliero anti-abuso).
+// Limite GIORNALIERO di partite (nascosto al giocatore). Si chiama all'inizio
+// di ogni partita: oltre il tetto, blocca fino al giorno dopo.
+const GAME_DAILY_LIMIT = Number(process.env.GAME_DAILY_LIMIT) || 100;
+app.post('/game/play', (req, res) => {
+  const u = authUser(req);
+  if (!u) return res.status(401).json({ error: 'Non autenticato.' });
+  const today = new Date().toISOString().slice(0, 10);
+  if (u.gameDay !== today) { u.gameDay = today; u.gameMatches = 0; u.gameWins = 0; }
+  if ((u.gameMatches || 0) >= GAME_DAILY_LIMIT) {
+    return res.status(429).json({ error: 'Hai giocato tantissimo oggi! Torna domani per altre partite 🌙', limit: true });
+  }
+  u.gameMatches = (u.gameMatches || 0) + 1;
+  persistUsers();
+  res.json({ ok: true });
+});
+
+// Premio per una partita VINTA (+40 monete). Non si può avere più vittorie che
+// partite giocate (anti-farm: il premio richiede una partita registrata).
 app.post('/game/reward', (req, res) => {
   const u = authUser(req);
   if (!u) return res.status(401).json({ error: 'Non autenticato.' });
   const today = new Date().toISOString().slice(0, 10);
-  if (u.gameDay !== today) { u.gameDay = today; u.gameWins = 0; }
-  if ((u.gameWins || 0) >= 15) {
-    return res.status(429).json({ error: 'Hai raggiunto il massimo di premi partita di oggi.', ...userState(u) });
+  if (u.gameDay !== today) { u.gameDay = today; u.gameMatches = 0; u.gameWins = 0; }
+  if ((u.gameWins || 0) >= (u.gameMatches || 0)) {
+    return res.status(400).json({ error: 'Nessuna partita da premiare.', ...userState(u) });
   }
   u.gameWins = (u.gameWins || 0) + 1;
-  addCoinsU(u, 40); // +40 monete a vittoria
+  addCoinsU(u, 40); // +40 monete a vittoria (addCoinsU persiste)
   res.json({ ok: true, ...userState(u) });
 });
 
