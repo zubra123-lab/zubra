@@ -76,6 +76,28 @@ function saveKV(k, value) {
     fs.writeFile(_fileFor(k), JSON.stringify(v), () => {});
   }, 800);
 }
+// Salva SUBITO tutte le scritture in sospeso (chiamato alla chiusura: niente
+// perdita dell'ultima modifica quando l'app viene riavviata/fermata).
+async function flushPending() {
+  for (const k of Object.keys(_savePending)) {
+    if (_saveTimers[k]) { clearTimeout(_saveTimers[k]); _saveTimers[k] = null; }
+    const v = _savePending[k]; delete _savePending[k];
+    try {
+      if (dbReady) await pgPool.query('INSERT INTO kv(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=$2', [k, JSON.stringify(v)]);
+      else fs.writeFileSync(_fileFor(k), JSON.stringify(v));
+    } catch (e) { console.error('flush ' + k + ' fallito:', e.message); }
+  }
+}
+let _shuttingDown = false;
+async function gracefulShutdown(sig) {
+  if (_shuttingDown) return; _shuttingDown = true;
+  console.log(`Ricevuto ${sig}: salvo i dati in sospeso e chiudo.`);
+  try { await flushPending(); } catch {}
+  try { if (pgPool) await pgPool.end(); } catch {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 async function initStore() {
   if (!DATABASE_URL) { console.log('Persistenza: FILE (nessun DATABASE_URL).'); return; }
   try {
