@@ -760,28 +760,46 @@ async function recognizeWithGemini(imageBase64, mimeType) {
     }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA, temperature: 0.4 },
   };
-  let r;
-  try {
-    r = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120000),
-    });
-  } catch {
-    const e = new Error('net'); e.userMessage = 'AI non raggiungibile. Riprova tra poco.'; throw e;
+  // Gemini (specie il flash gratis) a volte risponde 503 "overloaded" o 429:
+  // sono transitori → riproviamo fino a 3 volte con breve attesa crescente.
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let r;
+    try {
+      r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(45000),
+      });
+    } catch {
+      lastErr = Object.assign(new Error('net'), { userMessage: 'AI non raggiungibile. Riprova tra poco.' });
+      if (attempt < 3) { await sleep(700 * attempt); continue; }
+      throw lastErr;
+    }
+    // 503 sovraccarico / 429 rate-limit / 500 → transitori: riprova
+    if (r.status === 503 || r.status === 429 || r.status === 500) {
+      console.error(`Gemini ${r.status} (tentativo ${attempt}/3) — riprovo`);
+      lastErr = Object.assign(new Error('gemini'), { userMessage: 'Servizio AI sovraccarico. Riprova tra qualche secondo.' });
+      if (attempt < 3) { await sleep(900 * attempt); continue; }
+      throw lastErr;
+    }
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '');
+      console.error('Errore Gemini', r.status, detail.slice(0, 300));
+      throw Object.assign(new Error('gemini'), { userMessage: 'Errore del servizio AI. Riprova.' });
+    }
+    const data = await r.json().catch(() => null);
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      lastErr = Object.assign(new Error('empty'), { userMessage: 'Risposta AI vuota. Riprova.' });
+      if (attempt < 3) { await sleep(700 * attempt); continue; }
+      throw lastErr;
+    }
+    return parseAnimalJson(text);
   }
-  if (!r.ok) {
-    const detail = await r.text().catch(() => '');
-    console.error('Errore Gemini', r.status, detail.slice(0, 500));
-    const e = new Error('gemini');
-    e.userMessage = r.status === 429 ? 'Servizio AI sovraccarico. Riprova tra poco.' : 'Errore del servizio AI. Riprova.';
-    throw e;
-  }
-  const data = await r.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) { const e = new Error('empty'); e.userMessage = 'Risposta AI vuota. Riprova.'; throw e; }
-  return parseAnimalJson(text);
+  throw lastErr || Object.assign(new Error('gemini'), { userMessage: 'Errore del servizio AI. Riprova.' });
 }
 
 // --- Provider: MiniMax (visione) ---
