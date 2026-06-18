@@ -805,17 +805,21 @@ function arenaBegin() {
   renderArenaBoard();
 }
 
-function arenaRoundHtml(L) {
-  return `<div class="ar-round"><div class="ar-vs">
-      <div class="ar-card" style="border-color:${rcOf(L.me.rar)}"><img src="${esc(L.me.img)}" alt=""/><div class="ar-nm">${esc(L.me.name)}</div><div class="ar-st">⚔️${L.me.atk}${L.ya ? "✅" : ""} 🛡️${L.me.def}${L.yd ? "✅" : ""}</div></div>
+function arenaRoundHtml(L, hidden) {
+  const cpuSide = hidden
+    ? `<div class="ar-emoji">🎴</div><div class="ar-nm">?</div><div class="ar-st">⚔️? 🛡️?</div>`
+    : `<div class="ar-emoji">${L.cpu.emoji}</div><div class="ar-nm">${esc(L.cpu.name)}</div><div class="ar-st">⚔️${L.cpu.atk}${L.oa ? "✅" : ""} 🛡️${L.cpu.def}${L.od ? "✅" : ""}</div>`;
+  return `<div class="ar-round${hidden ? " ar-pending" : ""}"><div class="ar-vs">
+      <div class="ar-card" style="border-color:${rcOf(L.me.rar)}"><img src="${esc(L.me.img)}" alt=""/><div class="ar-nm">${esc(L.me.name)}</div><div class="ar-st">⚔️${L.me.atk}${!hidden && L.ya ? "✅" : ""} 🛡️${L.me.def}${!hidden && L.yd ? "✅" : ""}</div></div>
       <div class="ar-mid">VS</div>
-      <div class="ar-card"><div class="ar-emoji">${L.cpu.emoji}</div><div class="ar-nm">${esc(L.cpu.name)}</div><div class="ar-st">⚔️${L.cpu.atk}${L.oa ? "✅" : ""} 🛡️${L.cpu.def}${L.od ? "✅" : ""}</div></div>
+      <div class="ar-card">${cpuSide}</div>
     </div></div>`;
 }
 
 function renderArenaBoard() {
   const st = arenaState; if (!st) return;
-  const logHtml = st.log.map(arenaRoundHtml).join("");
+  let logHtml = st.log.map((L) => arenaRoundHtml(L, false)).join("");
+  if (st.pending) logHtml += arenaRoundHtml(st.pending, true); // carta in corso, CPU coperta
   const handHtml = st.mine.map((m, i) => m.played ? "" : `
     <button class="ar-hand-card" data-i="${i}" style="border-color:${rcOf(m.rar)}" ${st.busy ? "disabled" : ""}>
       <img src="${esc(m.img)}" alt="" />
@@ -847,10 +851,12 @@ function playArenaCard(idx) {
     def: clampN(Math.round(m.def + (Math.random() * 2 - 1) * ARENA_NOISE), 5, 99),
   };
   const ya = m.atk >= cpu.atk, oa = cpu.atk >= m.atk, yd = m.def >= cpu.def, od = cpu.def >= m.def;
-  renderArenaBoard(); // mostra "la macchina cala la carta..."
+  st.pending = { me: m, cpu, ya, oa, yd, od };
+  renderArenaBoard(); // mostra la TUA carta vs CPU coperta ("la macchina cala la carta…")
   setTimeout(() => {
+    if (arenaState !== st) return; // partita chiusa/cambiata nel frattempo: ignora
     if (ya) st.you++; if (oa) st.opp++; if (yd) st.you++; if (od) st.opp++;
-    st.log.push({ me: m, cpu, ya, oa, yd, od });
+    st.log.push(st.pending); st.pending = null;
     st.round++;
     st.busy = false;
     if (st.round >= 3) finishArena();
@@ -861,7 +867,7 @@ function playArenaCard(idx) {
 async function finishArena() {
   const st = arenaState; if (!st) return;
   const won = st.you > st.opp, draw = st.you === st.opp;
-  const rows = st.log.map(arenaRoundHtml).join("");
+  const rows = st.log.map((L) => arenaRoundHtml(L, false)).join("");
   let reward = "";
   if (won) {
     try {
