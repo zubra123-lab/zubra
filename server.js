@@ -294,6 +294,11 @@ function rateLimit(key, max, windowMs) {
   if (e.count >= max) return false;
   e.count += 1; return true;
 }
+// Pulizia periodica delle entry scadute (evita crescita illimitata di memoria).
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, e] of rlMap) { if (now > e.resetAt) rlMap.delete(k); }
+}, 10 * 60 * 1000).unref();
 // Azzera il contatore di una chiave (es. dopo un accesso riuscito).
 function rateLimitReset(key) { rlMap.delete(key); }
 function clientIp(req) {

@@ -498,6 +498,105 @@ const I18N = {
   },
 };
 
+// --- Chiavi mancanti tradotte per le lingue compatte (Arena, pubblicità,
+//     fotocamera, classifica, reset password, foto-blocco). ---
+Object.assign(I18N.es, {
+  f_contact: "Email",
+  ad_title: "Anuncio", ad_sub: "¡Mira el anuncio para conseguir 1 escaneo gratis!", ad_wait: (s) => `Anuncio… ${s}s`, ad_claim: "Reclamar 1 escaneo", ad_done: "🎉 ¡+1 escaneo gratis añadido!",
+  scan_progress: (s) => `🔎 Observando al animal… ${s}s (puede tardar ~60s)`, scan_cancel: "✕ Cancelar", scan_cancelled: "Escaneo cancelado.",
+  forgot_q: "¿Olvidaste la contraseña?", forgot_info: "Escribe tu email: te enviaremos un código para restablecer la contraseña.", forgot_send: "Enviar código", new_password: "Nueva contraseña", reset_btn: "Restablecer y entrar", reset_sent: "📧 Si la cuenta existe, te enviamos un código. ¡Revisa tu correo (y el spam)!",
+  tab_lb: "Ranking", lb_title: "Clasificación mundial", lb_desc: "¡Los cazadores con más monedas del mundo!", lb_empty: "Aún no hay nadie. ¡Sé el primero en escanear! 🐾", lb_you: (rank, total) => `¡Eres #${rank} de ${total}! 🦓`,
+  photo_suspect: "⚠️ Parece una foto de internet (sin monedas; el escaneo se usó). ¡Prueba con una foto TUYA!", photo_internet_blocked: "🚫 Foto de internet o captura: ¡no permitida! Haz TU propia foto del animal en vivo. 📷", camera: "📷 Foto", photo_blocked_title: "🚫 Foto no permitida", photo_blocked_sub: "Parece de internet o una captura. ¡Haz o elige TU propia foto del animal!",
+  tab_arena: "Arena", cam_title: "Haz una foto", cam_shot: "📸 Capturar", cam_denied: "Cámara no disponible aquí. Usa 🖼️ Galería.",
+  set_avatar: "🖼️ Usar como foto de perfil", avatar_done: "✅ ¡Foto de perfil actualizada!",
+  lb_remove_prompt: (n) => `Contraseña secreta para quitar a "${n}" del ranking:`, lb_removed: "✅ Quitado del ranking.", lb_remove_err: "❌ Contraseña incorrecta.",
+  arena_title: "⚔️ Arena de Cartas", arena_intro: "3 rondas: en cada ronda el ataque y la defensa más altos valen 1 punto. ¡Gana quien tenga más puntos!", arena_need: "¡Necesitas al menos 1 animal capturado para jugar! 🐾", arena_power: (n, b) => `💪 Juegan tus 3 animales más fuertes · bonus de colección +${b} (${n} capturados)`, arena_start: "⚔️ Empezar partida", arena_again: "↻ Jugar otra vez", arena_close: "Cerrar", arena_you: "Tú", arena_cpu: "Rival", arena_round: (n) => `Ronda ${n} / 3`, arena_win: "🏆 ¡GANASTE!", arena_lose: "😢 Perdiste", arena_draw: "🤝 ¡Empate!", arena_points: (a, b) => `Tú ${a} — ${b} Rival`, arena_reward: "🪙 ¡+40 monedas!", arena_atk: "ATQ", arena_def: "DEF",
+});
+Object.assign(I18N.pt, {
+  f_contact: "Email",
+  ad_title: "Anúncio", ad_sub: "Vê o anúncio para ganhares 1 digitalização grátis!", ad_wait: (s) => `Anúncio… ${s}s`, ad_claim: "Resgatar 1 scan", ad_done: "🎉 +1 scan grátis adicionado!",
+  scan_progress: (s) => `🔎 A observar o animal… ${s}s (pode demorar ~60s)`, scan_cancel: "✕ Cancelar", scan_cancelled: "Digitalização cancelada.",
+  forgot_q: "Esqueceste a palavra-passe?", forgot_info: "Escreve o teu email: enviamos um código para repor a palavra-passe.", forgot_send: "Enviar código", new_password: "Nova palavra-passe", reset_btn: "Repor e entrar", reset_sent: "📧 Se a conta existir, enviámos um código. Vê o correio (e o spam)!",
+  tab_lb: "Ranking", lb_title: "Classificação mundial", lb_desc: "Os caçadores com mais moedas do mundo!", lb_empty: "Ainda ninguém. Sê o primeiro a digitalizar! 🐾", lb_you: (rank, total) => `És #${rank} de ${total}! 🦓`,
+  photo_suspect: "⚠️ Parece uma foto da internet (sem moedas; o scan foi usado). Tenta uma foto TUA!", photo_internet_blocked: "🚫 Foto da internet ou captura: não permitida! Tira a TUA foto do animal ao vivo. 📷", camera: "📷 Foto", photo_blocked_title: "🚫 Foto não permitida", photo_blocked_sub: "Parece da internet ou uma captura. Tira ou escolhe a TUA foto do animal!",
+  tab_arena: "Arena", cam_title: "Tira uma foto", cam_shot: "📸 Capturar", cam_denied: "Câmara indisponível aqui. Usa 🖼️ Galeria.",
+  set_avatar: "🖼️ Usar como foto de perfil", avatar_done: "✅ Foto de perfil atualizada!",
+  lb_remove_prompt: (n) => `Palavra-passe secreta para remover "${n}" do ranking:`, lb_removed: "✅ Removido do ranking.", lb_remove_err: "❌ Palavra-passe errada.",
+  arena_title: "⚔️ Arena de Cartas", arena_intro: "3 rondas: em cada ronda o ataque e a defesa mais altos valem 1 ponto. Ganha quem tiver mais pontos!", arena_need: "Precisas de pelo menos 1 animal capturado para jogar! 🐾", arena_power: (n, b) => `💪 Jogam os teus 3 animais mais fortes · bónus de coleção +${b} (${n} capturados)`, arena_start: "⚔️ Começar partida", arena_again: "↻ Jogar de novo", arena_close: "Fechar", arena_you: "Tu", arena_cpu: "Adversário", arena_round: (n) => `Ronda ${n} / 3`, arena_win: "🏆 GANHASTE!", arena_lose: "😢 Perdeste", arena_draw: "🤝 Empate!", arena_points: (a, b) => `Tu ${a} — ${b} Adversário`, arena_reward: "🪙 +40 moedas!", arena_atk: "ATQ", arena_def: "DEF",
+});
+Object.assign(I18N.fr, {
+  f_contact: "E-mail",
+  ad_title: "Publicité", ad_sub: "Regarde la pub pour gagner 1 scan gratuit !", ad_wait: (s) => `Pub… ${s}s`, ad_claim: "Récupérer 1 scan", ad_done: "🎉 +1 scan gratuit ajouté !",
+  scan_progress: (s) => `🔎 J'observe l'animal… ${s}s (peut prendre ~60s)`, scan_cancel: "✕ Annuler", scan_cancelled: "Scan annulé.",
+  forgot_q: "Mot de passe oublié ?", forgot_info: "Saisis ton e-mail : on t'envoie un code pour réinitialiser le mot de passe.", forgot_send: "Envoyer le code", new_password: "Nouveau mot de passe", reset_btn: "Réinitialiser et entrer", reset_sent: "📧 Si le compte existe, on t'a envoyé un code. Vérifie ta boîte (et les spams) !",
+  tab_lb: "Classement", lb_title: "Classement mondial", lb_desc: "Les chasseurs avec le plus de pièces au monde !", lb_empty: "Personne pour l'instant. Sois le premier à scanner ! 🐾", lb_you: (rank, total) => `Tu es #${rank} sur ${total} ! 🦓`,
+  photo_suspect: "⚠️ On dirait une photo d'internet (pas de pièces ; le scan a été utilisé). Essaie TA propre photo !", photo_internet_blocked: "🚫 Photo d'internet ou capture d'écran : non autorisée ! Prends TA photo de l'animal en vrai. 📷", camera: "📷 Photo", photo_blocked_title: "🚫 Photo non autorisée", photo_blocked_sub: "On dirait internet ou une capture. Prends ou choisis TA propre photo de l'animal !",
+  tab_arena: "Arène", cam_title: "Prends une photo", cam_shot: "📸 Capturer", cam_denied: "Caméra indisponible ici. Utilise 🖼️ Galerie.",
+  set_avatar: "🖼️ Utiliser comme photo de profil", avatar_done: "✅ Photo de profil mise à jour !",
+  lb_remove_prompt: (n) => `Mot de passe secret pour retirer « ${n} » du classement :`, lb_removed: "✅ Retiré du classement.", lb_remove_err: "❌ Mot de passe incorrect.",
+  arena_title: "⚔️ Arène de Cartes", arena_intro: "3 manches : à chaque manche, la meilleure attaque et la meilleure défense valent 1 point. Le plus de points gagne !", arena_need: "Il te faut au moins 1 animal capturé pour jouer ! 🐾", arena_power: (n, b) => `💪 Tes 3 animaux les plus forts entrent · bonus collection +${b} (${n} capturés)`, arena_start: "⚔️ Commencer", arena_again: "↻ Rejouer", arena_close: "Fermer", arena_you: "Toi", arena_cpu: "Adversaire", arena_round: (n) => `Manche ${n} / 3`, arena_win: "🏆 GAGNÉ !", arena_lose: "😢 Perdu", arena_draw: "🤝 Égalité !", arena_points: (a, b) => `Toi ${a} — ${b} Adversaire`, arena_reward: "🪙 +40 pièces !", arena_atk: "ATQ", arena_def: "DÉF",
+});
+Object.assign(I18N.de, {
+  f_contact: "E-Mail",
+  ad_title: "Werbung", ad_sub: "Schau die Werbung für 1 Gratis-Scan!", ad_wait: (s) => `Werbung… ${s}s`, ad_claim: "1 Scan abholen", ad_done: "🎉 +1 Gratis-Scan hinzugefügt!",
+  scan_progress: (s) => `🔎 Ich schaue mir das Tier an… ${s}s (kann ~60s dauern)`, scan_cancel: "✕ Abbrechen", scan_cancelled: "Scan abgebrochen.",
+  forgot_q: "Passwort vergessen?", forgot_info: "Gib deine E-Mail ein: Wir senden dir einen Code zum Zurücksetzen.", forgot_send: "Code senden", new_password: "Neues Passwort", reset_btn: "Zurücksetzen und rein", reset_sent: "📧 Falls das Konto existiert, haben wir dir einen Code geschickt. Schau ins Postfach (auch Spam)!",
+  tab_lb: "Rangliste", lb_title: "Weltrangliste", lb_desc: "Die Jäger mit den meisten Münzen weltweit!", lb_empty: "Noch niemand dabei. Sei der Erste! 🐾", lb_you: (rank, total) => `Du bist #${rank} von ${total}! 🦓`,
+  photo_suspect: "⚠️ Sieht aus wie ein Foto aus dem Internet (keine Münzen; der Scan wurde genutzt). Nimm DEIN eigenes Foto!", photo_internet_blocked: "🚫 Foto aus dem Internet oder Screenshot: nicht erlaubt! Mach DEIN eigenes Live-Foto vom Tier. 📷", camera: "📷 Foto", photo_blocked_title: "🚫 Foto nicht erlaubt", photo_blocked_sub: "Sieht nach Internet oder Screenshot aus. Mach oder wähle DEIN eigenes Foto vom Tier!",
+  tab_arena: "Arena", cam_title: "Mach ein Foto", cam_shot: "📸 Aufnehmen", cam_denied: "Kamera hier nicht verfügbar. Nutze 🖼️ Galerie.",
+  set_avatar: "🖼️ Als Profilbild verwenden", avatar_done: "✅ Profilbild aktualisiert!",
+  lb_remove_prompt: (n) => `Geheimes Passwort, um "${n}" aus der Rangliste zu entfernen:`, lb_removed: "✅ Aus der Rangliste entfernt.", lb_remove_err: "❌ Falsches Passwort.",
+  arena_title: "⚔️ Karten-Arena", arena_intro: "3 Runden: pro Runde geben der höhere Angriff und die höhere Verteidigung je 1 Punkt. Wer mehr Punkte hat, gewinnt!", arena_need: "Du brauchst mindestens 1 gefangenes Tier zum Spielen! 🐾", arena_power: (n, b) => `💪 Deine 3 stärksten Tiere treten an · Sammlungsbonus +${b} (${n} gefangen)`, arena_start: "⚔️ Spiel starten", arena_again: "↻ Nochmal", arena_close: "Schließen", arena_you: "Du", arena_cpu: "Gegner", arena_round: (n) => `Runde ${n} / 3`, arena_win: "🏆 GEWONNEN!", arena_lose: "😢 Verloren", arena_draw: "🤝 Unentschieden!", arena_points: (a, b) => `Du ${a} — ${b} Gegner`, arena_reward: "🪙 +40 Münzen!", arena_atk: "ANG", arena_def: "VER",
+});
+Object.assign(I18N.ru, {
+  f_contact: "Email",
+  ad_title: "Реклама", ad_sub: "Посмотри рекламу и получи 1 бесплатный скан!", ad_wait: (s) => `Реклама… ${s}с`, ad_claim: "Забрать 1 скан", ad_done: "🎉 +1 бесплатный скан добавлен!",
+  scan_progress: (s) => `🔎 Рассматриваю животное… ${s}с (может занять ~60с)`, scan_cancel: "✕ Отмена", scan_cancelled: "Скан отменён.",
+  forgot_q: "Забыл пароль?", forgot_info: "Введи свой email: мы отправим код для сброса пароля.", forgot_send: "Отправить код", new_password: "Новый пароль", reset_btn: "Сбросить и войти", reset_sent: "📧 Если аккаунт есть, мы отправили код. Проверь почту (и спам)!",
+  tab_lb: "Рейтинг", lb_title: "Мировой рейтинг", lb_desc: "Охотники с наибольшим числом монет в мире!", lb_empty: "Пока никого. Стань первым! 🐾", lb_you: (rank, total) => `Ты #${rank} из ${total}! 🦓`,
+  photo_suspect: "⚠️ Похоже на фото из интернета (без монет; скан использован). Попробуй СВОЁ фото!", photo_internet_blocked: "🚫 Фото из интернета или скриншот: нельзя! Сделай СВОЁ живое фото животного. 📷", camera: "📷 Фото", photo_blocked_title: "🚫 Фото запрещено", photo_blocked_sub: "Похоже на интернет или скриншот. Сделай или выбери СВОЁ фото животного!",
+  tab_arena: "Арена", cam_title: "Сделай фото", cam_shot: "📸 Снять", cam_denied: "Камера здесь недоступна. Используй 🖼️ Галерею.",
+  set_avatar: "🖼️ Сделать фото профиля", avatar_done: "✅ Фото профиля обновлено!",
+  lb_remove_prompt: (n) => `Секретный пароль, чтобы убрать "${n}" из рейтинга:`, lb_removed: "✅ Убрано из рейтинга.", lb_remove_err: "❌ Неверный пароль.",
+  arena_title: "⚔️ Арена Карт", arena_intro: "3 раунда: в каждом раунде высшая атака и высшая защита дают по 1 очку. Побеждает тот, у кого больше очков!", arena_need: "Нужно хотя бы 1 пойманное животное! 🐾", arena_power: (n, b) => `💪 Играют 3 твоих сильнейших животных · бонус коллекции +${b} (${n} поймано)`, arena_start: "⚔️ Начать", arena_again: "↻ Ещё раз", arena_close: "Закрыть", arena_you: "Ты", arena_cpu: "Соперник", arena_round: (n) => `Раунд ${n} / 3`, arena_win: "🏆 ПОБЕДА!", arena_lose: "😢 Поражение", arena_draw: "🤝 Ничья!", arena_points: (a, b) => `Ты ${a} — ${b} Соперник`, arena_reward: "🪙 +40 монет!", arena_atk: "АТК", arena_def: "ЗАЩ",
+});
+Object.assign(I18N.zh, {
+  f_contact: "邮箱",
+  ad_title: "广告", ad_sub: "观看广告即可获得 1 次免费扫描！", ad_wait: (s) => `广告… ${s}秒`, ad_claim: "领取 1 次扫描", ad_done: "🎉 已添加 +1 次免费扫描！",
+  scan_progress: (s) => `🔎 正在观察动物… ${s}秒（可能需要约60秒）`, scan_cancel: "✕ 取消", scan_cancelled: "已取消扫描。",
+  forgot_q: "忘记密码？", forgot_info: "输入你的邮箱：我们会发送重置密码的验证码。", forgot_send: "发送验证码", new_password: "新密码", reset_btn: "重置并进入", reset_sent: "📧 如果账户存在，我们已发送验证码。请查收（也看看垃圾箱）！",
+  tab_lb: "排行榜", lb_title: "世界排行榜", lb_desc: "全世界金币最多的猎人！", lb_empty: "还没有人。快来第一个扫描吧！🐾", lb_you: (rank, total) => `你是第 ${rank} 名（共 ${total}）🦓`,
+  photo_suspect: "⚠️ 看起来像网络图片（无金币；本次扫描已使用）。请用你自己的照片！", photo_internet_blocked: "🚫 网络图片或截图：不允许！请拍你自己的动物实拍照片。📷", camera: "📷 拍照", photo_blocked_title: "🚫 照片不允许", photo_blocked_sub: "看起来像网络图片或截图。请拍或选你自己的动物照片！",
+  tab_arena: "竞技场", cam_title: "拍一张照片", cam_shot: "📸 拍摄", cam_denied: "此处无法使用相机。请用 🖼️ 相册。",
+  set_avatar: "🖼️ 设为头像", avatar_done: "✅ 头像已更新！",
+  lb_remove_prompt: (n) => `输入密码以将“${n}”移出排行榜：`, lb_removed: "✅ 已移出排行榜。", lb_remove_err: "❌ 密码错误。",
+  arena_title: "⚔️ 卡牌竞技场", arena_intro: "3 回合：每回合更高的攻击和更高的防御各得 1 分。分高者胜！", arena_need: "至少需要捕捉 1 只动物才能玩！🐾", arena_power: (n, b) => `💪 出战你最强的 3 只动物 · 收藏加成 +${b}（已捕捉 ${n}）`, arena_start: "⚔️ 开始对战", arena_again: "↻ 再玩一次", arena_close: "关闭", arena_you: "你", arena_cpu: "对手", arena_round: (n) => `第 ${n} / 3 回合`, arena_win: "🏆 你赢了！", arena_lose: "😢 你输了", arena_draw: "🤝 平局！", arena_points: (a, b) => `你 ${a} — ${b} 对手`, arena_reward: "🪙 +40 金币！", arena_atk: "攻", arena_def: "防",
+});
+Object.assign(I18N.ja, {
+  f_contact: "メール",
+  ad_title: "こうこく", ad_sub: "こうこくを見て、むりょうスキャンを1かいゲット！", ad_wait: (s) => `こうこく… ${s}秒`, ad_claim: "スキャンを1かいもらう", ad_done: "🎉 むりょうスキャン +1 ついか！",
+  scan_progress: (s) => `🔎 動物をかんさつ中… ${s}秒（約60秒かかることも）`, scan_cancel: "✕ キャンセル", scan_cancelled: "スキャンをキャンセルしました。",
+  forgot_q: "パスワードをわすれた？", forgot_info: "メールを入力してね。パスワード再設定のコードを送ります。", forgot_send: "コードを送る", new_password: "新しいパスワード", reset_btn: "リセットして入る", reset_sent: "📧 アカウントがあればコードを送りました。受信トレイ（迷惑メールも）を確認してね！",
+  tab_lb: "ランキング", lb_title: "せかいランキング", lb_desc: "世界でいちばんコインを持つハンターたち！", lb_empty: "まだだれもいません。さいしょにスキャンしよう！🐾", lb_you: (rank, total) => `きみは ${total}人中 ${rank}位！🦓`,
+  photo_suspect: "⚠️ ネットの写真みたい（コインなし。スキャンは消費されました）。じぶんの写真でためしてね！", photo_internet_blocked: "🚫 ネットの写真やスクショはダメ！じぶんで動物をその場でとってね。📷", camera: "📷 さつえい", photo_blocked_title: "🚫 この写真はダメ", photo_blocked_sub: "ネットかスクショみたい。じぶんで動物の写真をとるか選んでね！",
+  tab_arena: "アリーナ", cam_title: "写真をとる", cam_shot: "📸 さつえい", cam_denied: "ここではカメラが使えません。🖼️ ギャラリーを使ってね。",
+  set_avatar: "🖼️ プロフィール写真にする", avatar_done: "✅ プロフィール写真をこうしん！",
+  lb_remove_prompt: (n) => `「${n}」をランキングから消すひみつのパスワード：`, lb_removed: "✅ ランキングから消しました。", lb_remove_err: "❌ パスワードがちがいます。",
+  arena_title: "⚔️ カードアリーナ", arena_intro: "3ラウンド：各ラウンドで高いこうげきと高いぼうぎょがそれぞれ1点。点が多いほうが勝ち！", arena_need: "あそぶには動物を1匹いじょうつかまえてね！🐾", arena_power: (n, b) => `💪 いちばん強い3匹がしゅつじょう・コレクションボーナス +${b}（${n}匹）`, arena_start: "⚔️ しあいスタート", arena_again: "↻ もういちど", arena_close: "とじる", arena_you: "きみ", arena_cpu: "あいて", arena_round: (n) => `ラウンド ${n} / 3`, arena_win: "🏆 かち！", arena_lose: "😢 まけ", arena_draw: "🤝 ひきわけ！", arena_points: (a, b) => `きみ ${a} — ${b} あいて`, arena_reward: "🪙 +40 コイン！", arena_atk: "こう", arena_def: "ぼう",
+});
+Object.assign(I18N.hi, {
+  f_contact: "ईमेल",
+  ad_title: "विज्ञापन", ad_sub: "विज्ञापन देखो और 1 मुफ़्त स्कैन पाओ!", ad_wait: (s) => `विज्ञापन… ${s}से`, ad_claim: "1 स्कैन लो", ad_done: "🎉 +1 मुफ़्त स्कैन जोड़ा गया!",
+  scan_progress: (s) => `🔎 जानवर को देख रहे हैं… ${s}से (लगभग 60से लग सकते हैं)`, scan_cancel: "✕ रद्द करें", scan_cancelled: "स्कैन रद्द किया गया।",
+  forgot_q: "पासवर्ड भूल गए?", forgot_info: "अपना ईमेल डालो: हम पासवर्ड रीसेट करने का कोड भेजेंगे।", forgot_send: "कोड भेजें", new_password: "नया पासवर्ड", reset_btn: "रीसेट करके आओ", reset_sent: "📧 अगर खाता मौजूद है तो हमने कोड भेजा है। इनबॉक्स (और स्पैम) देखो!",
+  tab_lb: "रैंकिंग", lb_title: "विश्व रैंकिंग", lb_desc: "दुनिया में सबसे ज़्यादा सिक्कों वाले शिकारी!", lb_empty: "अभी कोई नहीं। सबसे पहले स्कैन करो! 🐾", lb_you: (rank, total) => `तुम ${total} में #${rank} हो! 🦓`,
+  photo_suspect: "⚠️ यह इंटरनेट की फ़ोटो लगती है (कोई सिक्के नहीं; स्कैन इस्तेमाल हुआ)। अपनी फ़ोटो आज़माओ!", photo_internet_blocked: "🚫 इंटरनेट की फ़ोटो या स्क्रीनशॉट: मना है! जानवर की अपनी लाइव फ़ोटो लो। 📷", camera: "📷 फ़ोटो", photo_blocked_title: "🚫 फ़ोटो की अनुमति नहीं", photo_blocked_sub: "यह इंटरनेट या स्क्रीनशॉट लगती है। जानवर की अपनी फ़ोटो लो या चुनो!",
+  tab_arena: "अरीना", cam_title: "फ़ोटो लो", cam_shot: "📸 कैप्चर", cam_denied: "यहाँ कैमरा उपलब्ध नहीं। 🖼️ गैलरी इस्तेमाल करो।",
+  set_avatar: "🖼️ प्रोफ़ाइल फ़ोटो बनाओ", avatar_done: "✅ प्रोफ़ाइल फ़ोटो अपडेट हुई!",
+  lb_remove_prompt: (n) => `"${n}" को रैंकिंग से हटाने का गुप्त पासवर्ड:`, lb_removed: "✅ रैंकिंग से हटाया गया।", lb_remove_err: "❌ ग़लत पासवर्ड।",
+  arena_title: "⚔️ कार्ड अरीना", arena_intro: "3 राउंड: हर राउंड में ज़्यादा अटैक और ज़्यादा डिफ़ेंस के 1-1 अंक। ज़्यादा अंक वाला जीतता है!", arena_need: "खेलने के लिए कम से कम 1 पकड़ा हुआ जानवर चाहिए! 🐾", arena_power: (n, b) => `💪 तुम्हारे 3 सबसे ताकतवर जानवर · संग्रह बोनस +${b} (${n} पकड़े)`, arena_start: "⚔️ मैच शुरू करो", arena_again: "↻ फिर खेलो", arena_close: "बंद करें", arena_you: "तुम", arena_cpu: "प्रतिद्वंद्वी", arena_round: (n) => `राउंड ${n} / 3`, arena_win: "🏆 तुम जीते!", arena_lose: "😢 तुम हारे", arena_draw: "🤝 बराबरी!", arena_points: (a, b) => `तुम ${a} — ${b} प्रतिद्वंद्वी`, arena_reward: "🪙 +40 सिक्के!", arena_atk: "अटैक", arena_def: "डिफ़",
+});
+
 // Varianti basate su lingue esistenti (poche differenze).
 I18N["pt-BR"] = Object.assign({}, I18N.pt, {
   scan_btn: "⌖ Escanear", analyzing: "◌ Analisando…", scans_word: "escaneamentos", scan_short: "scans",
